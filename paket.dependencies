@@ -2,3 +2,8 @@ source https://api.nuget.org/v3/index.json
 
 nuget FSharp.Core
 nuget Fake.DotNet.Cli
+nuget Expecto
+nuget Microsoft.NET.Test.Sdk
+nuget xunit
+nuget xunit.runner.visualstudio
+nuget YoloDev.Expecto.TestSdk

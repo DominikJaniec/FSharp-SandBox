@@ -1,0 +1,6 @@
+FSharp.Core
+Expecto
+Microsoft.NET.Test.Sdk
+xunit
+xunit.runner.visualstudio
+YoloDev.Expecto.TestSdk
