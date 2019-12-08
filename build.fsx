@@ -22,16 +22,30 @@ module GathererTarget =
     |}
 
 
-  let build (param: TargetParameter) =
+  let build (_: TargetParameter) =
     Trace.log " --- Building the app --- "
     DotNet.build id paths.Gatherer
     DotNet.build id paths.GathererTests
     ()
 
 
-  let test (param: TargetParameter) =
+  let test (_: TargetParameter) =
     Trace.log " --- Executing tests --- "
     DotNet.test id paths.GathererTests
+
+
+module ExamplesTarget =
+
+  let private path =
+    "Examples.fsproj"
+    |> Path.combine "Examples"
+    |> Path.combine "src"
+
+
+  let execute (_: TargetParameter) =
+    Trace.log " --- Executing examples --- "
+    DotNet.exec id "run" ("--project " + path)
+    |> ignore
 
 
 // *** Define Targets ***
@@ -42,11 +56,17 @@ Target.create "Clean" <| fun _ ->
 Target.create "Build"
   GathererTarget.build
 
+Target.create "ReBuild" <| fun _ ->
+  Trace.log " --- Executing ReBuild --- "
+
 Target.create "Test"
   GathererTarget.test
 
-Target.create "ReBuild" <| fun _ ->
-  Trace.log " --- Executing ReBuild --- "
+Target.create "Example"
+  ExamplesTarget.execute
+
+Target.create "Sample"
+  ExamplesTarget.execute
 
 
 // *** Define Dependencies ***
@@ -54,6 +74,7 @@ Target.create "ReBuild" <| fun _ ->
 "Clean" ?=> "Build"
 "Clean" ==> "ReBuild"
 "Build" ==> "ReBuild"
+
 
 // *** Start Build ***
 Target.runOrDefault "Test"

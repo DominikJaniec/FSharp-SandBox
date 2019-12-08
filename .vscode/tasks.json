@@ -8,6 +8,7 @@
             "command": "fake",
             "type": "shell",
             "args": [
+                "--silent",
                 "build",
                 "--target=Build"
             ],
@@ -26,6 +27,7 @@
             "command": "fake",
             "type": "shell",
             "args": [
+                "--silent",
                 "build",
                 "--target=Test"
             ],
@@ -35,6 +37,22 @@
             },
             "presentation": {
                 "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "sample",
+            "command": "fake",
+            "type": "shell",
+            "args": [
+                "--silent",
+                "build",
+                "--target=Example"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
                 "panel": "dedicated"
             },
             "problemMatcher": "$msCompile"
