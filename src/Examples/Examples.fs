@@ -39,6 +39,11 @@ let canopyDemo (_: Executor.Log) =
     canopyTest ()
 
 
+let twitterTreesUpdates (log: Executor.Log) =
+    "Traverses last 7 days of @TreesUpdates' tweets" &&&
+        (TwitterTreesUpdates.lastDays 7 log)
+
+
 let allDemos (log: Executor.Log) =
 
     // Defines basic test demos
@@ -46,3 +51,6 @@ let allDemos (log: Executor.Log) =
         log "Executing test of logs"
 
     canopyDemo log
+
+    // Registers other demos
+    twitterTreesUpdates log

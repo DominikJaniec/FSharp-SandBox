@@ -8,4 +8,4 @@ To show a demo execution, type in your console:<br>
 `> fake --silent build --target Example`
 
 Or just as shorthand:<br>
-`> fake -s build -t Example`
+`> fake -s build -t Sample`
