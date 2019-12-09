@@ -4,6 +4,7 @@
     <TargetFramework>netcoreapp3.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Tools.fs" />
     <Compile Include="Executor.fs" />
     <Compile Include="TwitterTreesUpdates.fs" />
     <Compile Include="Examples.fs" />
