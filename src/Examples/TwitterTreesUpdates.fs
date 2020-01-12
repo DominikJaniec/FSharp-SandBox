@@ -1,29 +1,26 @@
 module TwitterTreesUpdates
 
 open System
-open System.IO
 open canopy.classic
 open Continuum.Gatherer.Core
+
+
+let private executionIdentity = "TwitterTreesUpdates"
 
 let private tweetsPage = "https://twitter.com/TreesUpdates"
 let private tweeterUserName = "TeamTrees Updates"
 
 
-let lastDays (lastDays: int) (log: Executor.Log) =
+let lastDays (lastDays: int) (context: Executor.Context) =
 
-    let takeScreenshotAs description =
-        let timestamp = Tools.asTimestamp DateTime.UtcNow
-        let filename = String.concat "" [ timestamp; " "; description ]
-        let directory = Path.Combine("results", "TwitterTreesUpdates")
-        let data = screenshot directory filename
+    let log message =
+        context.log message
 
-        (Array.length data, filename)
-        ||> sprintf "Screenshot taken and saved (%d bytes) in file: '%s'."
-        |> log
-
+    let screenshotAs description =
+        context.screenshot executionIdentity description
 
     let waitForNextStep () =
-        // sleep 1
+        sleep 1
         ()
 
 
@@ -44,7 +41,7 @@ let lastDays (lastDays: int) (log: Executor.Log) =
         headingSelector == tweeterUserName
         highlight headingSelector
 
-        takeScreenshotAs "expected Twitter profile"
+        screenshotAs "expected Twitter profile"
         waitForNextStep()
 
 
@@ -61,7 +58,7 @@ let lastDays (lastDays: int) (log: Executor.Log) =
         |> sprintf "Expected tab is active displaying: '%s'."
         |> log
 
-        takeScreenshotAs "expected Tweets tab"
+        screenshotAs "expected Tweets tab"
         waitForNextStep()
 
 
@@ -69,7 +66,7 @@ let lastDays (lastDays: int) (log: Executor.Log) =
         log <| sprintf "Opening page: '%s'..." tweetsPage
 
         url tweetsPage
-        takeScreenshotAs "page opened"
+        screenshotAs "page opened"
         waitForNextStep()
 
         ensureExpectedUserPage()

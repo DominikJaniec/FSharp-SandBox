@@ -8,10 +8,10 @@ let EXIT_SUCCESS = 0
 let main argv =
 
     Executor.executeWith
-        { browser = firefox
+        { register = Examples.canopyDemo
+        // { register = Examples.allDemos
+        ; browser = firefox
         ; leftBrowserOpen = false
-        ; register = Examples.allDemos
-        // ; register = Examples.canopyDemo
         ; log = fun msg -> printfn "# Log: %s" msg
         }
 

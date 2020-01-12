@@ -6,3 +6,5 @@ paket-files/
 packages/
 bin/
 obj/
+
+results/

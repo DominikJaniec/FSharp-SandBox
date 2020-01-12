@@ -6,35 +6,48 @@ open System
 module Tools =
 
     type TimestampConfig =
-        { separator: char
+        { dateFormat: string
+        ; timeFormat: string
+        ; separator: string
         ; skipLast: uint32
+        ; skip: uint32 -> string -> string
         }
 
-    let asTimestampWith (config: TimestampConfig) (value: DateTime) =
-
-        let fullFormat =
-            let date = "yyyy-MM-dd"
-            let time = "HH.mm.ss.fff"
-            let sep = Char.ToString(config.separator)
-            String.concat "" [ date; sep; time ]
-
-        let format =
+    let defaultTimestamp =
+        let skipImpl last formatted =
+            let length = String.length formatted
             let skip =
-                match config.skipLast with
+                match last with
                 // Skips: yyyy-MM-dd HH.mm.ss.fff
                 | 5u -> 7 //              .ss.fff
                 | 3u -> 4 //                 .fff
                 // TODO: Skip other tails
                 | _ -> 0
 
-            let length = (String.length fullFormat) - skip
-            fullFormat.Substring(0, length)
+            formatted.Substring(0, length - skip)
 
-        value.ToString(format)
+        { dateFormat = "yyyy-MM-dd"
+        ; timeFormat = "HH.mm.ss.fff"
+        ; separator = "+"
+        ; skipLast = 0u
+        ; skip = skipImpl
+        }
 
+
+    let asTimestampWith (config: TimestampConfig) (value: DateTime) =
+        let timestampFormat =
+            config.dateFormat + config.separator + config.timeFormat
+
+        value.ToString(timestampFormat)
+        |> config.skip config.skipLast
 
     let asTimestamp (value: DateTime) =
-        asTimestampWith { separator = '+'; skipLast = 0u } value
+        asTimestampWith defaultTimestamp value
 
     let asTimestamp' (value: DateTime) =
-        asTimestampWith { separator = ' '; skipLast = 5u } value
+        asTimestampWith
+            { defaultTimestamp
+                with separator = " "
+                    ; skipLast = 5u
+            }
+            value

@@ -35,22 +35,22 @@ let canopyTest () =
         "#button_clicked" == "button clicked"
 
 
-let canopyDemo (_: Executor.Log) =
+let canopyDemo (_: Executor.Context) =
     canopyTest ()
 
 
-let twitterTreesUpdates (log: Executor.Log) =
+let twitterTreesUpdates (context: Executor.Context) =
     "Traverses last 7 days of @TreesUpdates' tweets" &&&
-        (TwitterTreesUpdates.lastDays 7 log)
+        (TwitterTreesUpdates.lastDays 7 context)
 
 
-let allDemos (log: Executor.Log) =
+let allDemos (context: Executor.Context) =
 
     // Defines basic test demos
     "Executor.Log test as demo" &&& fun _ ->
-        log "Executing test of logs"
+        context.log "Executing test of logs"
 
-    canopyDemo log
+    canopyDemo context
 
     // Registers other demos
-    twitterTreesUpdates log
+    twitterTreesUpdates context
