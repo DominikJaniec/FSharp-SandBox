@@ -6,6 +6,8 @@
   <ItemGroup>
     <Compile Include="Tools.fs" />
     <Compile Include="Executor.fs" />
+    <Compile Include="Element.fs" />
+    <Compile Include="WebTools.fs" />
     <Compile Include="TwitterTreesUpdates.fs" />
     <Compile Include="Examples.fs" />
     <Compile Include="Program.fs" />

@@ -1,14 +1,139 @@
 module TwitterTreesUpdates
 
 open System
+open OpenQA.Selenium
 open canopy.classic
 open Continuum.Gatherer.Core
+open Continuum.Gatherer.Selenium
 
 
 let private executionIdentity = "TwitterTreesUpdates"
 
 let private tweetsPage = "https://twitter.com/TreesUpdates"
 let private tweeterUserName = "TeamTrees Updates"
+
+
+type private Twitter =
+    { id: string
+    ; handle: string
+    ; fullName: string
+    }
+
+type private Statistics =
+    { retweets: int
+    ; replies: int
+    ; favorites: int
+    }
+
+type private Tweet =
+    { id: string
+    ; by: Twitter
+    ; at: DateTime
+    ; url: string
+    ; stats: Statistics
+    ; content: IWebElement
+    ; stringified: string
+    }
+
+
+module private StatisticsParser =
+    let selector = ".ProfileTweet-action"
+
+    let statisticsZero =
+        { replies = 0
+        ; retweets = 0
+        ; favorites = 0
+        }
+
+    let from (elements: IWebElement list) =
+
+        let set (stats: Statistics) (action: IWebElement) =
+            let actionIs name = action |> Element.hasClass name
+            let count =
+                let el = action |> elementWithin ".ProfileTweet-actionCount"
+                match el.Text |> String.IsNullOrWhiteSpace with
+                | false -> int el.Text
+                | true -> 0
+
+            if not <| actionIs "ProfileTweet-action"
+                then failwithf "Element does not have expected class."
+
+            else if actionIs "ProfileTweet-action--reply"
+                then { stats with replies = count }
+
+            else if actionIs "ProfileTweet-action--retweet"
+                then { stats with retweets = count }
+
+            else if actionIs "ProfileTweet-action--favorite"
+                then { stats with favorites = count }
+
+            else
+                Element.attrRaw "class" action
+                |> failwithf "Unknown action with class: '%s'."
+
+        elements |> Seq.fold set statisticsZero
+
+
+module private TweetParser =
+    let selector = "[data-item-type='tweet']"
+
+    let from (element: IWebElement) =
+
+        let getBy cssSelector =
+            elementWithin cssSelector element
+
+        let attrBy cssSelector name =
+            getBy cssSelector
+            |> Element.attr name
+
+        let attr name =
+            attrBy ".tweet" name
+
+        let twitter =
+            { id = attr "data-user-id"
+            ; handle = "@" + (attr "data-screen-name")
+            ; fullName = attr "data-name"
+            }
+
+        let tweetedAt =
+            let timestampSelector = ".stream-item-header .tweet-timestamp span"
+            let time = attrBy timestampSelector "data-time" |> float
+            DateTime(1970, 1, 1).AddSeconds(time)
+
+        let tweetLink =
+            "https://twitter.com" + (attr "data-permalink-path")
+
+        let statistics =
+            let footer = getBy ".stream-item-footer "
+            elementsWithin StatisticsParser.selector footer
+            |> StatisticsParser.from
+
+        let contentElement =
+            getBy ".js-tweet-text-container"
+
+        { id = attr "data-tweet-id"
+        ; by = twitter
+        ; at = tweetedAt
+        ; url = tweetLink
+        ; stats = statistics
+        ; content = contentElement
+        ; stringified = element.Text
+        }
+
+
+type private Observation<'TEvent, 'TSource> =
+    { timestamp: DateTime
+    ; event: 'TEvent
+    ; source: 'TSource
+    }
+
+
+let private toTreesObservation (tweet: Tweet) =
+    // TODO: implement parsing
+    { timestamp = tweet.at
+    ; event = -1
+    ; source = tweet
+    } |> Some
 
 
 let lastDays (lastDays: int) (context: Executor.Context) =
@@ -20,28 +145,28 @@ let lastDays (lastDays: int) (context: Executor.Context) =
         context.screenshot executionIdentity description
 
     let waitForNextStep () =
-        sleep 1
+        // sleep 1
         ()
 
 
     let ensureExpectedUserPage() =
         log "Ensuring opened page is expected."
 
-        let headingSelector = ".ProfileHeaderCard-nameLink"
-        let headings = elements headingSelector
+        let headerSelector = ".ProfileHeaderCard-nameLink"
+        highlight headerSelector
 
-        (List.length headings, headingSelector)
+        let headers = elements headerSelector
+        (List.length headers, headerSelector)
         ||> sprintf "Found %d elements matching selector: '%s'."
         |> log
 
-        read headingSelector
+        read headerSelector
         |> sprintf "Text content of the first one: '%s'."
         |> log
 
-        headingSelector == tweeterUserName
-        highlight headingSelector
-
         screenshotAs "expected Twitter profile"
+        headerSelector == tweeterUserName
+
         waitForNextStep()
 
 
@@ -49,16 +174,16 @@ let lastDays (lastDays: int) (context: Executor.Context) =
         log "Ensuring activated tab is expected."
 
         let tabSelector = "[data-element-term=tweets_toggle].is-active"
-
-        displayed tabSelector
         highlight tabSelector
+
+        screenshotAs "expected Tweets tab"
+        displayed tabSelector
 
         let textSelector = "[aria-hidden=true]"
         (element tabSelector |> elementWithin textSelector).Text
         |> sprintf "Expected tab is active displaying: '%s'."
         |> log
 
-        screenshotAs "expected Tweets tab"
         waitForNextStep()
 
 
@@ -72,7 +197,7 @@ let lastDays (lastDays: int) (context: Executor.Context) =
         ensureExpectedUserPage()
         ensureExpectedTweetsTab()
 
-        log "Opened at Twitter page."
+        log "Opened at valid and expected Twitter page."
         waitForNextStep()
 
 
@@ -81,34 +206,30 @@ let lastDays (lastDays: int) (context: Executor.Context) =
         |> sprintf "Looking for Tweets not older than: %s."
         |> log
 
-        let batchLimit = 7 // TODO: make this infinite source
-        let tweetSelector = "[data-item-type='tweet']:not(.js-pinned)"
+        let batchLimit = 1 // TODO: make this limited by `pastLimit`
+        let tweetSelector = TweetParser.selector + ":not(.js-pinned)"
         seq {
             for i in 0 .. batchLimit do
                 let element = nth i tweetSelector
-                let id = "#" + element.GetAttribute("id")
+                WebTools.highlightIt element
 
-                // TODO: scroll to it, so highlighting is visible
-                highlight id
-                log <| sprintf "Retrieving #%d tweet: '%s'." (i+1) id
-
-                waitForNextStep()
-                yield element
+                log <| sprintf "Parsing as Tweet: %A..." element
+                yield TweetParser.from element
         }
 
 
     fun _ ->
-        let tweetsLimit = 3
         let pastLimit =
             TimeSpan.FromDays(float lastDays)
             |> DateTime.UtcNow.Subtract
 
         openTwitterPage()
-        getTweetsUntil pastLimit
-        |> Seq.take tweetsLimit
-        |> Seq.iter (fun el ->
-            // TODO: use it!
-            log el.Text
-        )
 
-        ()
+        getTweetsUntil pastLimit
+        |> Seq.choose toTreesObservation
+        |> Seq.iter (fun x ->
+            log <| "Got stringified Tweet:\n" + x.source.content.Text
+
+            // TODO: use it somehow!
+            waitForNextStep()
+        )
