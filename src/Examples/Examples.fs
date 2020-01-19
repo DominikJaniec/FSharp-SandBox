@@ -1,5 +1,6 @@
 module Examples
 
+open System
 open canopy.runner.classic
 open canopy.classic
 
@@ -40,8 +41,12 @@ let canopyDemo (_: Executor.Context) =
 
 
 let twitterTreesUpdates (context: Executor.Context) =
-    "Traverses last 7 days of @TreesUpdates' tweets" &&&
-        (TwitterTreesUpdates.lastDays 7 context)
+    // Date of first "official" YouTube announcement about #TeamTrees:
+    // https://twitter.com/YouTube/status/1187806031520268288
+    let limit = DateTime(2019, 10, 25 - 1)
+
+    "Traverses all @TreesUpdates' tweets about #TeamTrees" &&&
+        (TwitterTreesUpdates.tweetsUntil limit context)
 
 
 let allDemos (context: Executor.Context) =

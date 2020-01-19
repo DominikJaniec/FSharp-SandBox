@@ -1,6 +1,7 @@
 module TwitterTreesUpdates
 
 open System
+open System.Diagnostics
 open System.Text.RegularExpressions
 open FSharp.Json
 open OpenQA.Selenium
@@ -138,13 +139,14 @@ module private TweetContent =
         ; content = tweet.content.Text
         }
 
-    let serialize (storage: Executor.IStorage) (tweets: TweetContent list) =
+    let serialize (description: string) (storage: Executor.IStorage) (tweets: TweetContent list) =
         let serialized = Json.serialize tweets
+        let filename = sprintf "tweets %s.json" description
 
-        ("tweets.json", Array.singleton serialized)
+        (filename, Array.singleton serialized)
         ||> storage.SaveFileAs executionIdentity
 
-    let deserialize (storage: Executor.IStorage) (filename: string) =
+    let deserialize (filename: string) (storage: Executor.IStorage) =
         storage.LoadFileAs executionIdentity filename
         |> Json.deserialize<TweetContent list>
 
@@ -286,7 +288,7 @@ module private TreesEventParser =
             |> Ok
 
 
-let lastDays (lastDays: int) (context: Executor.Context) =
+let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
 
     let log message =
         context.log.Info message
@@ -351,41 +353,75 @@ let lastDays (lastDays: int) (context: Executor.Context) =
         waitForNextStep()
 
 
-    let getTweetsUntil (pastLimit: DateTime) =
-        Tools.asTimestamp' pastLimit
+    let getTweetsUntilLimit() =
+        let tweetSelector = TweetParser.selector + ":not(.js-pinned)"
+
+        let getTweetAt index =
+            let watch = Stopwatch.StartNew()
+
+            // Note: Selecting via `nth` keeps getting slower
+            //       for older Tweets. Pleas be patient.
+            let element = nth index tweetSelector
+            WebTools.highlightIt element
+            let selecting = watch.Elapsed
+
+            log <| sprintf "Parsing as Tweet: %A..." element
+            let tweet = TweetParser.from element
+            let parsing = watch.Elapsed.Subtract(selecting)
+
+            let tweetIdentity =
+                Tools.asTimestamp' tweet.at
+                |> sprintf "%s at: %s" tweet.id
+
+            let watchTime (elapsed: TimeSpan) =
+                sprintf "%.2f sec" elapsed.TotalSeconds
+
+            (tweetIdentity, watchTime selecting, watchTime parsing)
+            |||> sprintf "Got tweet %s - selected: %s, parsed: %s."
+            |> log
+
+            waitForNextStep()
+            tweet
+
+        let stillFresh (tweet: Tweet) =
+            tweet.at > tweetsLimit
+
+        Tools.asTimestamp' tweetsLimit
         |> sprintf "Looking for Tweets not older than: %s."
         |> log
 
-        let batchLimit = 1 // TODO: make this limited by `pastLimit`
-        let tweetSelector = TweetParser.selector + ":not(.js-pinned)"
-        seq {
-            for i in 0 .. batchLimit do
-                let element = nth i tweetSelector
-                WebTools.highlightIt element
-
-                log <| sprintf "Parsing as Tweet: %A..." element
-                yield TweetParser.from element
-        }
+        Seq.initInfinite getTweetAt
+        |> Seq.takeWhile stillFresh
 
 
     let gatherTweets() =
-        let pastLimit =
-            TimeSpan.FromDays(float lastDays)
-            |> DateTime.UtcNow.Subtract
+        let batchSize = 32
 
-        let tweets =
-            getTweetsUntil pastLimit
+        let tweetsBatches =
+            getTweetsUntilLimit()
             |> Seq.map TweetContent.from
-            |> List.ofSeq
+            |> Seq.chunkBySize batchSize
 
-        log <| sprintf "Serializing %d tweets..." tweets.Length
-        tweets |> TweetContent.serialize context.storage
-        tweets
+        let serializeAs (description: string) (tweets: TweetContent list) =
+            log <| sprintf "Serializing %d tweets..." tweets.Length
+            tweets |> TweetContent.serialize description context.storage
+            tweets
+
+        let serializeBatch i batch =
+            let n = sprintf "p.%03d" (i + 1)
+            List.ofArray batch
+            |> serializeAs n
+
+        tweetsBatches
+        |> Seq.mapi serializeBatch
+        |> Seq.concat
+        |> List.ofSeq
+        |> serializeAs "- all"
 
 
     let loadTweetsFrom (filename: string) =
         log <| sprintf "Loading and deserializing tweets from '%s' file." filename
-        TweetContent.deserialize context.storage filename
+        TweetContent.deserialize filename context.storage
 
 
     fun _ ->
@@ -399,3 +435,11 @@ let lastDays (lastDays: int) (context: Executor.Context) =
             // TODO: use it somehow!
             waitForNextStep()
         )
+
+
+let tweetsLastDays (lastDays: int) (context: Executor.Context) =
+    let limit =
+        TimeSpan.FromDays(float lastDays)
+        |> DateTime.UtcNow.Subtract
+
+    tweetsUntil limit context

@@ -13,9 +13,13 @@ module WebTools =
 
 
     let scrollIntoView (element: IWebElement) =
-        // alignToTop:true => scrollIntoViewOptions: {block: "start", inline: "nearest"}
-        // alignToTop:false => scrollIntoViewOptions: {block: "end", inline: "nearest"}
-        execute "arguments[0].scrollIntoView(false);" [ element ]
+        let script =
+            // "true" // or => "{ block: 'start', inline: 'nearest' }"
+            // "false" // or => "{ block: 'end', inline: 'nearest' }"
+            "{ block: 'center', inline: 'nearest' }"
+            |> sprintf "arguments[0].scrollIntoView(%s);"
+
+        execute script [ element ]
         |> ignore
 
 
