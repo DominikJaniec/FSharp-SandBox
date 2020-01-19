@@ -8,39 +8,71 @@ open canopy.types
 open Continuum.Gatherer.Core
 
 
-type Log =
-    string -> unit
+type ILog =
+    abstract member Info : string -> unit
 
-type Screenshot =
-    string -> string -> unit
+type IStorage =
+    abstract member LoadFileAs : string -> string -> string
+    abstract member SaveFileAs : string -> string -> string[] -> unit
+    abstract member ScreenshotAs : string -> string -> unit
 
 type Context =
-    { log: Log
-    ; screenshot: Screenshot
+    { log: ILog
+    ; storage: IStorage
     }
 
 type Parameters =
     { register: Context -> unit
     ; browser: BrowserStartMode
     ; leftBrowserOpen: bool
-    ; log: Log
+    ; log: ILog
     }
 
 
 let private makeContextFrom (param: Parameters) =
 
-    let takeScreenshot identity description =
-        let timestamp = Tools.asTimestamp DateTime.UtcNow
-        let filename = timestamp + " " + description
-        let directory = Path.Combine("results", identity)
-        let data = screenshot directory filename
+    let directoryOf identity =
+        Path.Combine("results", identity)
 
-        (Array.length data, directory, filename)
-        |||> sprintf "Screenshot taken and saved (%d bytes) in file: '%s|%s'."
-        |> param.log
+    let pathFor identity filename =
+        let timestamp = Tools.asTimestamp DateTime.UtcNow
+        let filename = timestamp + " " + filename
+        let directory = directoryOf identity
+        let combined = Path.Combine(directory, filename)
+        (directory, filename, combined)
 
     { log = param.log
-    ; screenshot = takeScreenshot
+    ; storage =
+        { new IStorage with
+
+            member __.LoadFileAs (identity: string) (filename: string) : string =
+                let filePath =
+                    let directory = directoryOf identity
+                    Path.Combine(directory, filename)
+
+                let content = File.ReadAllText(filePath)
+                (content.Length, filePath)
+                ||> sprintf "Loaded %d characters from file: '%s'."
+                |> param.log.Info
+
+                content
+
+            member __.SaveFileAs (identity: string) (filename: string) (lines: string[]) : unit =
+                let (_, _, filePath) = pathFor identity filename
+                File.WriteAllLines(filePath, lines)
+
+                (FileInfo(filePath).Length, filePath)
+                ||> sprintf "All file lines saved (%d bytes) in file: '%s'."
+                |> param.log.Info
+
+            member __.ScreenshotAs (identity: string) (description: string) : unit =
+                let (directory, filename, filePath) = pathFor identity description
+                let data = screenshot directory filename
+
+                (Array.length data, filePath)
+                ||> sprintf "Screenshot taken and saved (%d bytes) in file: '%s'."
+                |> param.log.Info
+        }
     }
 
 

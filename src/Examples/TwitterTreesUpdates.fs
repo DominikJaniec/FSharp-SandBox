@@ -1,6 +1,8 @@
 module TwitterTreesUpdates
 
 open System
+open System.IO
+open FSharp.Json
 open OpenQA.Selenium
 open canopy.classic
 open Continuum.Gatherer.Core
@@ -121,28 +123,39 @@ module private TweetParser =
         }
 
 
-type private Observation<'TEvent, 'TSource> =
+type TweetContent =
     { timestamp: DateTime
-    ; event: 'TEvent
-    ; source: 'TSource
+    ; tweetUrl: string
+    ; twitter: string
+    ; content: string
     }
 
+module private TweetContent =
+    let from (tweet: Tweet) =
+        { timestamp = tweet.at
+        ; tweetUrl = tweet.url
+        ; twitter = tweet.by.handle
+        ; content = tweet.content.Text
+        }
 
-let private toTreesObservation (tweet: Tweet) =
-    // TODO: implement parsing
-    { timestamp = tweet.at
-    ; event = -1
-    ; source = tweet
-    } |> Some
+    let serialize (storage: Executor.IStorage) (tweets: TweetContent list) =
+        let serialized = Json.serialize tweets
+
+        ("tweets.json", Array.singleton serialized)
+        ||> storage.SaveFileAs executionIdentity
+
+    let deserialize (storage: Executor.IStorage) (filename: string) =
+        storage.LoadFileAs executionIdentity filename
+        |> Json.deserialize<TweetContent list>
 
 
 let lastDays (lastDays: int) (context: Executor.Context) =
 
     let log message =
-        context.log message
+        context.log.Info message
 
     let screenshotAs description =
-        context.screenshot executionIdentity description
+        context.storage.ScreenshotAs executionIdentity description
 
     let waitForNextStep () =
         // sleep 1
@@ -218,17 +231,32 @@ let lastDays (lastDays: int) (context: Executor.Context) =
         }
 
 
-    fun _ ->
+    let gatherTweets() =
         let pastLimit =
             TimeSpan.FromDays(float lastDays)
             |> DateTime.UtcNow.Subtract
 
-        openTwitterPage()
+        let tweets =
+            getTweetsUntil pastLimit
+            |> Seq.map TweetContent.from
+            |> List.ofSeq
 
-        getTweetsUntil pastLimit
-        |> Seq.choose toTreesObservation
-        |> Seq.iter (fun x ->
-            log <| "Got stringified Tweet:\n" + x.source.content.Text
+        log <| sprintf "Serializing %d tweets..." tweets.Length
+        tweets |> TweetContent.serialize context.storage
+        tweets
+
+
+    let loadTweetsFrom (filename: string) =
+        log <| sprintf "Loading and deserializing tweets from '%s' file." filename
+        TweetContent.deserialize context.storage filename
+
+
+    fun _ ->
+        openTwitterPage()
+        gatherTweets()
+        // loadTweetsFrom "tweets.json"
+        |> Seq.iter (fun tweet ->
+            log <| sprintf "Got Tweet:\n%A" tweet
 
             // TODO: use it somehow!
             waitForNextStep()

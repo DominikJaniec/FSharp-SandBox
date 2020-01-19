@@ -48,7 +48,7 @@ let allDemos (context: Executor.Context) =
 
     // Defines basic test demos
     "Executor.Log test as demo" &&& fun _ ->
-        context.log "Executing test of logs"
+        context.log.Info "Executing test of logs"
 
     canopyDemo context
 
