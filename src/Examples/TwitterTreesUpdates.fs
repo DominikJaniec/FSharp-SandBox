@@ -1,7 +1,6 @@
 module TwitterTreesUpdates
 
 open System
-open System.Diagnostics
 open System.Text.RegularExpressions
 open FSharp.Json
 open OpenQA.Selenium
@@ -124,23 +123,47 @@ module private TweetParser =
         }
 
 
-type TweetContent =
+type TweetData =
     { timestamp: DateTime
     ; tweetUrl: string
     ; twitter: string
     ; content: string
     }
 
-module private TweetContent =
-    let from (tweet: Tweet) =
-        { timestamp = tweet.at
-        ; tweetUrl = tweet.url
-        ; twitter = tweet.by.handle
-        ; content = tweet.content.Text
+type TweetItem =
+    { tweetData: TweetData
+    ; selecting: TimeSpan
+    ; parsing: TimeSpan
+    }
+
+module TweetItem =
+
+    let dataOf (item: TweetItem) =
+        item.tweetData
+
+    type Dto =
+        { tweet: TweetData
+        ; selectingTime: int64
+        ; parsingTime: int64
         }
 
-    let serialize (description: string) (storage: Executor.IStorage) (tweets: TweetContent list) =
-        let serialized = Json.serialize tweets
+    let private toDto (tweets: TweetItem list) =
+        tweets |> List.map (fun tweet ->
+            { tweet = tweet.tweetData
+            ; selectingTime = tweet.selecting.Ticks
+            ; parsingTime = tweet.parsing.Ticks
+            })
+
+    let private fromDto (dtos: Dto list) =
+        let parse ticks = TimeSpan.FromTicks ticks
+        dtos |> List.map (fun item ->
+            { tweetData = item.tweet
+            ; selecting = parse item.selectingTime
+            ; parsing = parse item.parsingTime
+            })
+
+    let serialize (description: string) (storage: Executor.IStorage) (tweets: TweetItem list) =
+        let serialized = tweets |> toDto |> Json.serialize
         let filename = sprintf "tweets %s.json" description
 
         (filename, Array.singleton serialized)
@@ -148,7 +171,12 @@ module private TweetContent =
 
     let deserialize (filename: string) (storage: Executor.IStorage) =
         storage.LoadFileAs executionIdentity filename
-        |> Json.deserialize<TweetContent list>
+        |> Json.deserialize<Dto list>
+        |> fromDto
+
+    let deserializeData (filename: string) (storage: Executor.IStorage) =
+        deserialize filename storage
+        |> List.map dataOf
 
 
 type private TreesExtra =
@@ -266,7 +294,7 @@ module private TreesEventParser =
             ]
 
 
-    let from (tweet: TweetContent) =
+    let from (tweet: TweetData) =
 
         let notEmptyLine line =
             not <| String.IsNullOrWhiteSpace(line)
@@ -356,35 +384,71 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
     let getTweetsUntilLimit() =
         let tweetSelector = TweetParser.selector + ":not(.js-pinned)"
 
-        let getTweetAt index =
-            let watch = Stopwatch.StartNew()
+        let prefixIter i =
+            i + 1 |> sprintf "%05d"
 
-            // Note: Selecting via `nth` keeps getting slower
-            //       for older Tweets. Pleas be patient.
-            let element = nth index tweetSelector
-            WebTools.highlightIt element
-            let selecting = watch.Elapsed
+        let selectTweetAt index =
+            try
+                // Note: Selecting via `nth` keeps getting slower
+                //       for older (higher i's) Tweets.
+                // Pleas be patient...
+                let element = nth index tweetSelector
+                WebTools.highlightIt element
+                element |> Some
 
-            log <| sprintf "Parsing as Tweet: %A..." element
-            let tweet = TweetParser.from element
-            let parsing = watch.Elapsed.Subtract(selecting)
+            with ex ->
+                [ sprintf "%s. Got exception when selecting tweet:" <| prefixIter index
+                ; ex.ToString()
+                ; "No more tweets will be loaded."
+                ] |> Seq.iter log
+                None
 
-            let tweetIdentity =
-                Tools.asTimestamp' tweet.at
-                |> sprintf "%s at: %s" tweet.id
-
-            let watchTime (elapsed: TimeSpan) =
-                sprintf "%.2f sec" elapsed.TotalSeconds
-
-            (tweetIdentity, watchTime selecting, watchTime parsing)
-            |||> sprintf "Got tweet %s - selected: %s, parsed: %s."
+        let parseTweetAt index element =
+            (prefixIter index, element)
+            ||> sprintf "%s. Parsing as Tweet: %A..."
             |> log
 
-            waitForNextStep()
-            tweet
+            TweetParser.from element
 
-        let stillFresh (tweet: Tweet) =
-            tweet.at > tweetsLimit
+        let identity (tweet: Tweet) =
+            Tools.asTimestamp' tweet.at
+            |> sprintf "%s at: %s" tweet.id
+
+        let getTweetAt index =
+            let (selected, selecting) =
+                Tools.watchCall <| fun () ->
+                    selectTweetAt index
+
+            match selected with
+            | None -> None
+            | Some element ->
+                let (tweet, parsing) =
+                    Tools.watchCall <| fun () ->
+                        parseTweetAt index element
+
+                (identity tweet, Tools.sec00 selecting, Tools.sec00 parsing)
+                |||> sprintf "Got tweet %s - selected: %s, parsed: %s."
+                |> log
+
+                let tweetItem =
+                    { tweetData =
+                        { timestamp = tweet.at
+                        ; tweetUrl = tweet.url
+                        ; twitter = tweet.by.handle
+                        ; content = tweet.content.Text
+                        }
+                    ; selecting = selecting
+                    ; parsing = parsing
+                    }
+
+                waitForNextStep()
+                tweetItem |> Some
+
+        let stillFresh =
+            function
+            | None -> false
+            | Some (tweet: TweetItem) ->
+                tweet.tweetData.timestamp > tweetsLimit
 
         Tools.asTimestamp' tweetsLimit
         |> sprintf "Looking for Tweets not older than: %s."
@@ -392,36 +456,61 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
 
         Seq.initInfinite getTweetAt
         |> Seq.takeWhile stillFresh
+        |> Seq.choose id // <| fun x -> x
 
 
     let gatherTweets() =
-        let batchSize = 32
+        let batchSize = 33
 
         let tweetsBatches =
             getTweetsUntilLimit()
-            |> Seq.map TweetContent.from
             |> Seq.chunkBySize batchSize
 
-        let serializeAs (description: string) (tweets: TweetContent list) =
+        let serializeAs (description: string) (tweets: TweetItem list) =
             log <| sprintf "Serializing %d tweets..." tweets.Length
-            tweets |> TweetContent.serialize description context.storage
+            tweets |> TweetItem.serialize description context.storage
             tweets
 
         let serializeBatch i batch =
-            let n = sprintf "p.%03d" (i + 1)
-            List.ofArray batch
-            |> serializeAs n
+            let batch = List.ofArray batch
+            match i = 0 && batch.Length < batchSize with
+            | false ->
+                let n = sprintf "p.%03d" (i + 1)
+                serializeAs n batch
+            | true ->
+                batch
 
-        tweetsBatches
-        |> Seq.mapi serializeBatch
-        |> Seq.concat
-        |> List.ofSeq
-        |> serializeAs "- all"
+        let (tweetsItems, gathering) =
+            Tools.watchCall <| fun () ->
+                tweetsBatches
+                |> Seq.mapi serializeBatch
+                |> Seq.concat
+                |> List.ofSeq
+
+        let (tweets, serializing) =
+            Tools.watchCall <| fun () ->
+                tweetsItems
+                |> serializeAs "- all"
+                |> List.map TweetItem.dataOf
+
+        (List.length tweets, Tools.minSec00 gathering, Tools.sec00 serializing)
+        |||> sprintf "Gathered %d tweets, within: %s, serialized: %s."
+        |> log
+
+        tweets
 
 
     let loadTweetsFrom (filename: string) =
         log <| sprintf "Loading and deserializing tweets from '%s' file." filename
-        TweetContent.deserialize filename context.storage
+        let (tweets, loading) =
+            Tools.watchCall <| fun () ->
+                TweetItem.deserializeData filename context.storage
+
+        (List.length tweets, Tools.sec00 loading)
+        ||> sprintf "Loaded and deserialized %d tweets, withing: %s."
+        |> log
+
+        tweets
 
 
     fun _ ->

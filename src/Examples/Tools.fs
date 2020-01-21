@@ -1,6 +1,7 @@
 namespace Continuum.Gatherer.Core
 
 open System
+open System.Diagnostics
 
 
 module Tools =
@@ -51,3 +52,20 @@ module Tools =
                     ; skipLast = 5u
             }
             value
+
+    let sec00 (time: TimeSpan) =
+        sprintf "%.2f (sec)" time.TotalSeconds
+
+    let minSec00 (time: TimeSpan) =
+        let minutes = time.TotalMinutes |> int
+        let seconds =
+            time.TotalSeconds
+            - (time.TotalSeconds |> Math.Floor)
+            + (time.Seconds |> float)
+
+        sprintf "%d:%.2f (min:sec)" minutes seconds
+
+    let watchCall factory =
+        let watch = Stopwatch.StartNew()
+        let result = factory()
+        (result, watch.Elapsed)
