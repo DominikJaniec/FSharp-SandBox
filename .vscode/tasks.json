@@ -4,13 +4,12 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build",
+            "label": "build: FSharp-SandBox",
             "command": "fake",
             "type": "shell",
             "args": [
-                "--silent",
                 "build",
-                "--target=Build"
+                "--target=SandBox-Build"
             ],
             "group": {
                 "kind": "build",
@@ -23,32 +22,12 @@
             "problemMatcher": "$msCompile"
         },
         {
-            "label": "test",
+            "label": "idea: SeleniumViaCanopy",
             "command": "fake",
             "type": "shell",
             "args": [
-                "--silent",
                 "build",
-                "--target=Test"
-            ],
-            "group": {
-                "kind": "test",
-                "isDefault": true
-            },
-            "presentation": {
-                "reveal": "silent",
-                "panel": "dedicated"
-            },
-            "problemMatcher": "$msCompile"
-        },
-        {
-            "label": "sample",
-            "command": "fake",
-            "type": "shell",
-            "args": [
-                "--silent",
-                "build",
-                "--target=Example"
+                "--target=SeleniumViaCanopy"
             ],
             "group": "test",
             "presentation": {

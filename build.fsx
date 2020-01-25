@@ -9,72 +9,75 @@ open Fake.Core.TargetOperators
 open Fake.DotNet
 
 
-module GathererTarget =
-
-  let private paths =
-    let proj name =
-      sprintf "Continuum.%s.fsproj" name
-      |> Path.combine name
-      |> Path.combine "src"
-
-    {| Gatherer = proj "Gatherer"
-    ;  GathererTests = proj "Gatherer.Tests"
-    |}
+let logHeader header =
+  sprintf " --- %s ---" header
+  |> Trace.log
 
 
-  let build (_: TargetParameter) =
-    Trace.log " --- Building the app --- "
-    DotNet.build id paths.Gatherer
-    DotNet.build id paths.GathererTests
-    ()
+module SandBox =
 
+  let projectPath name =
+    Path.combine "src" name
 
-  let test (_: TargetParameter) =
-    Trace.log " --- Executing tests --- "
-    DotNet.test id paths.GathererTests
+  let projectFilePath name =
+    let proj = sprintf "%s.fsproj" name
+    Path.combine (projectPath name) proj
 
+  let executeProject name =
+    let path = projectFilePath name
+    sprintf "Executing '%s' project" path
+    |> logHeader
 
-module ExamplesTarget =
-
-  let private path =
-    "Examples.fsproj"
-    |> Path.combine "Examples"
-    |> Path.combine "src"
-
-
-  let execute (_: TargetParameter) =
-    Trace.log " --- Executing examples --- "
     DotNet.exec id "run" ("--project " + path)
     |> ignore
+
+  let buildProject name =
+    let path = projectFilePath name
+    sprintf "Building '%s' project" path
+    |> logHeader
+
+    DotNet.build id path
 
 
 // *** Define Targets ***
 
-Target.create "Clean" <| fun _ ->
-  Trace.log " --- Cleaning stuff --- "
+let sandbox =
+  {| Help = "SandBox-Help"
+     Init = "SandBox-Init"
+  ;  Build = "SandBox-Build"
+  |}
 
-Target.create "Build"
-  GathererTarget.build
+let idea =
+  {| SeleniumViaCanopy = "SeleniumViaCanopy"
+  |}
 
-Target.create "ReBuild" <| fun _ ->
-  Trace.log " --- Executing ReBuild --- "
 
-Target.create "Test"
-  GathererTarget.test
+Target.create sandbox.Help <| fun _ ->
+  logHeader "FSharp-SandBox by Dominik Janiec"
+  Target.listAvailable()
 
-Target.create "Example"
-  ExamplesTarget.execute
+Target.create sandbox.Init <| fun _ ->
+  logHeader "Initializing FSharp-SandBox"
+  ("paket", "--silent restore")
+  ||> CreateProcess.fromRawCommandLine
+  |> Proc.run
+  |> ignore
 
-Target.create "Sample"
-  ExamplesTarget.execute
+Target.create sandbox.Build <| fun _ ->
+  logHeader "Executing SandBox Build"
+  [ idea.SeleniumViaCanopy ]
+  |> List.iter SandBox.buildProject
+
+
+Target.create idea.SeleniumViaCanopy <| fun _ ->
+  SandBox.executeProject idea.SeleniumViaCanopy
 
 
 // *** Define Dependencies ***
 
-"Clean" ?=> "Build"
-"Clean" ==> "ReBuild"
-"Build" ==> "ReBuild"
+sandbox.Init ==> sandbox.Build
+sandbox.Init ==> idea.SeleniumViaCanopy
 
 
 // *** Start Build ***
-Target.runOrDefault "Test"
+Target.runOrDefault sandbox.Help

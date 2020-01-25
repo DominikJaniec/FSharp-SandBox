@@ -1,11 +1,23 @@
-# Continuum : Gatherer
+# FSharp-SandBox
 
-Extract data from pages' structure.
+Well, do something funky! Or just try some F# idea :)
+
+## How To Run Them
+
+To show what ideas are available, just call:
+
+`> fake --silent build --list`
+
+To execute chosen idea by its target name:
+
+`> fake --silent build --target TargetName`
 
 ----
 
-To show a demo execution, type in your console:<br>
-`> fake --silent build --target Example`
+### Environment Requirements
 
-Or just as shorthand:<br>
-`> fake -s build -t Sample`
+There are required to be available:
+
+* **FAKE** - https://fake.build/
+* **Paket** - https://fsprojects.github.io/Paket/
+* **.NET** (Core) - https://dotnet.microsoft.com/
