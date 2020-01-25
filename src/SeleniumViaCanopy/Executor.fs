@@ -5,7 +5,7 @@ open System.IO
 open canopy.runner.classic
 open canopy.classic
 open canopy.types
-open Continuum.Gatherer.Core
+open Continuum.Common
 
 
 type ILog =
@@ -35,11 +35,11 @@ let private makeContextFrom (param: Parameters) =
         Path.Combine("results", identity)
 
     let pathFor identity filename =
-        let timestamp = Tools.asTimestamp DateTime.UtcNow
+        let timestamp = Time.asStamp Time.Now
         let filename = timestamp + " " + filename
         let directory = directoryOf identity
         let combined = Path.Combine(directory, filename)
-        (directory, filename, combined)
+        (directory, filename, Path.GetFullPath combined)
 
     { log = param.log
     ; storage =

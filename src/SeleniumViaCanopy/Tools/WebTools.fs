@@ -1,4 +1,4 @@
-namespace Continuum.Gatherer.Selenium
+namespace SeleniumViaCanopy.Tools
 
 open OpenQA.Selenium
 open canopy.classic

@@ -5,8 +5,8 @@ open System.Text.RegularExpressions
 open FSharp.Json
 open OpenQA.Selenium
 open canopy.classic
-open Continuum.Gatherer.Core
-open Continuum.Gatherer.Selenium
+open Continuum.Common
+open SeleniumViaCanopy.Tools
 
 
 let private executionIdentity = "TwitterTreesUpdates"
@@ -411,22 +411,22 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
             TweetParser.from element
 
         let identity (tweet: Tweet) =
-            Tools.asTimestamp' tweet.at
+            Time.asStamp' tweet.at
             |> sprintf "%s at: %s" tweet.id
 
         let getTweetAt index =
             let (selected, selecting) =
-                Tools.watchCall <| fun () ->
+                Time.watchThat <| fun () ->
                     selectTweetAt index
 
             match selected with
             | None -> None
             | Some element ->
                 let (tweet, parsing) =
-                    Tools.watchCall <| fun () ->
+                    Time.watchThat <| fun () ->
                         parseTweetAt index element
 
-                (identity tweet, Tools.sec00 selecting, Tools.sec00 parsing)
+                (identity tweet, Time.sec00 selecting, Time.sec00 parsing)
                 |||> sprintf "Got tweet %s - selected: %s, parsed: %s."
                 |> log
 
@@ -450,7 +450,7 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
             | Some (tweet: TweetItem) ->
                 tweet.tweetData.timestamp > tweetsLimit
 
-        Tools.asTimestamp' tweetsLimit
+        Time.asStamp' tweetsLimit
         |> sprintf "Looking for Tweets not older than: %s."
         |> log
 
@@ -481,19 +481,19 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
                 batch
 
         let (tweetsItems, gathering) =
-            Tools.watchCall <| fun () ->
+            Time.watchThat <| fun () ->
                 tweetsBatches
                 |> Seq.mapi serializeBatch
                 |> Seq.concat
                 |> List.ofSeq
 
         let (tweets, serializing) =
-            Tools.watchCall <| fun () ->
+            Time.watchThat <| fun () ->
                 tweetsItems
                 |> serializeAs "- all"
                 |> List.map TweetItem.dataOf
 
-        (List.length tweets, Tools.minSec00 gathering, Tools.sec00 serializing)
+        (List.length tweets, Time.minSec00 gathering, Time.sec00 serializing)
         |||> sprintf "Gathered %d tweets, within: %s, serialized: %s."
         |> log
 
@@ -503,10 +503,10 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
     let loadTweetsFrom (filename: string) =
         log <| sprintf "Loading and deserializing tweets from '%s' file." filename
         let (tweets, loading) =
-            Tools.watchCall <| fun () ->
+            Time.watchThat <| fun () ->
                 TweetItem.deserializeData filename context.storage
 
-        (List.length tweets, Tools.sec00 loading)
+        (List.length tweets, Time.sec00 loading)
         ||> sprintf "Loaded and deserialized %d tweets, withing: %s."
         |> log
 

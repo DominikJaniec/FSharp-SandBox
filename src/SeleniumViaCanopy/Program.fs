@@ -1,4 +1,5 @@
-﻿open canopy.classic
+﻿open Continuum.Common
+open canopy.classic
 
 [<Literal>]
 let EXIT_SUCCESS = 0
@@ -7,6 +8,8 @@ let EXIT_SUCCESS = 0
 [<EntryPoint>]
 let main argv =
 
+    Runtime.fixCurrentDirectory()
+
     let log =
         { new Executor.ILog with
             member __.Info (message: string): unit =
@@ -14,8 +17,7 @@ let main argv =
         }
 
     Executor.executeWith
-        { register = Examples.canopyDemo
-        // { register = Examples.allDemos
+        { register = Examples.allDemos
         ; browser = firefox
         ; leftBrowserOpen = false
         ; log = log

@@ -41,43 +41,49 @@ module SandBox =
 
 // *** Define Targets ***
 
-let sandbox =
+let core =
   {| Help = "SandBox-Help"
-     Init = "SandBox-Init"
+  ;  Init = "SandBox-Init"
   ;  Build = "SandBox-Build"
+  ;  Continuum = "Continuum.Common"
   |}
 
-let idea =
+let ideas =
   {| SeleniumViaCanopy = "SeleniumViaCanopy"
   |}
 
 
-Target.create sandbox.Help <| fun _ ->
+Target.create core.Help <| fun _ ->
   logHeader "FSharp-SandBox by Dominik Janiec"
   Target.listAvailable()
 
-Target.create sandbox.Init <| fun _ ->
+Target.create core.Init <| fun _ ->
   logHeader "Initializing FSharp-SandBox"
   ("paket", "--silent restore")
   ||> CreateProcess.fromRawCommandLine
   |> Proc.run
   |> ignore
 
-Target.create sandbox.Build <| fun _ ->
+Target.create core.Continuum <| fun _ ->
+  SandBox.buildProject core.Continuum
+
+Target.create core.Build <| fun _ ->
   logHeader "Executing SandBox Build"
-  [ idea.SeleniumViaCanopy ]
+  [ ideas.SeleniumViaCanopy ]
   |> List.iter SandBox.buildProject
 
 
-Target.create idea.SeleniumViaCanopy <| fun _ ->
-  SandBox.executeProject idea.SeleniumViaCanopy
+Target.create ideas.SeleniumViaCanopy <| fun _ ->
+  SandBox.executeProject ideas.SeleniumViaCanopy
 
 
 // *** Define Dependencies ***
 
-sandbox.Init ==> sandbox.Build
-sandbox.Init ==> idea.SeleniumViaCanopy
+core.Init ==> core.Build
+core.Init ==> core.Continuum
+core.Continuum ==> core.Build
+core.Continuum ==> ideas.SeleniumViaCanopy
 
 
 // *** Start Build ***
-Target.runOrDefault sandbox.Help
+Target.runOrDefault core.Help
