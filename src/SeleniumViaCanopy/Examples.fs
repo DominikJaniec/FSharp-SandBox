@@ -45,8 +45,17 @@ let twitterTreesUpdates (context: Executor.Context) =
     // https://twitter.com/YouTube/status/1187806031520268288
     let limit = DateTime(2019, 10, 25 - 1)
 
+    let context: TweetsGatherer.Context =
+        { executor = context
+        ; config =
+            { executionIdentity = "TwitterTreesUpdates"
+            ; twitterDisplayName = "TeamTrees Updates"
+            ; twitterPageUrl = "https://twitter.com/TreesUpdates"
+            }
+        }
+
     "Traverses all @TreesUpdates' tweets about #TeamTrees" &&&
-        (TwitterTreesUpdates.tweetsUntil limit context)
+        (TweetsGatherer.tweetsUntil limit context)
 
 
 let allDemos (context: Executor.Context) =

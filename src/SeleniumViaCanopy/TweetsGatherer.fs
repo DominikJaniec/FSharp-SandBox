@@ -1,7 +1,6 @@
-module TwitterTreesUpdates
+module TweetsGatherer
 
 open System
-open System.Text.RegularExpressions
 open FSharp.Json
 open OpenQA.Selenium
 open canopy.classic
@@ -9,10 +8,16 @@ open Continuum.Common
 open SeleniumViaCanopy.Tools
 
 
-let private executionIdentity = "TwitterTreesUpdates"
+type Config =
+    { executionIdentity: string
+    ; twitterDisplayName: string
+    ; twitterPageUrl: string
+    }
 
-let private tweetsPage = "https://twitter.com/TreesUpdates"
-let private tweeterUserName = "TeamTrees Updates"
+type Context =
+    { executor: Executor.Context
+    ; config: Config
+    }
 
 
 type private Twitter =
@@ -124,14 +129,18 @@ module private TweetParser =
 
 
 type TweetData =
-    { timestamp: DateTime
-    ; tweetUrl: string
+    { tweetUrl: string
     ; twitter: string
+    ; timestamp: DateTime
     ; content: string
+    ; replies: int
+    ; retweets: int
+    ; favorites: int
     }
 
 type TweetItem =
     { tweetData: TweetData
+    ; gatheredAt: DateTime
     ; selecting: TimeSpan
     ; parsing: TimeSpan
     }
@@ -141,188 +150,52 @@ module TweetItem =
     let dataOf (item: TweetItem) =
         item.tweetData
 
-    type Dto =
-        { tweet: TweetData
-        ; selectingTime: int64
-        ; parsingTime: int64
-        }
-
-    let private toDto (tweets: TweetItem list) =
-        tweets |> List.map (fun tweet ->
-            { tweet = tweet.tweetData
-            ; selectingTime = tweet.selecting.Ticks
-            ; parsingTime = tweet.parsing.Ticks
-            })
-
-    let private fromDto (dtos: Dto list) =
-        let parse ticks = TimeSpan.FromTicks ticks
-        dtos |> List.map (fun item ->
-            { tweetData = item.tweet
-            ; selecting = parse item.selectingTime
-            ; parsing = parse item.parsingTime
-            })
-
-    let serialize (description: string) (storage: Executor.IStorage) (tweets: TweetItem list) =
-        let serialized = tweets |> toDto |> Json.serialize
-        let filename = sprintf "tweets %s.json" description
-
-        (filename, Array.singleton serialized)
-        ||> storage.SaveFileAs executionIdentity
-
-    let deserialize (filename: string) (storage: Executor.IStorage) =
-        storage.LoadFileAs executionIdentity filename
-        |> Json.deserialize<Dto list>
-        |> fromDto
-
-    let deserializeData (filename: string) (storage: Executor.IStorage) =
-        deserialize filename storage
-        |> List.map dataOf
-
-
-type private TreesExtra =
-    { avg: int
-    ; target: decimal
-    ; goalEta: string
-    } with
-        static member Zero =
-            { avg = 0
-            ; target = 0m
-            ; goalEta = "unknown"
-            }
-
-type private TreesEvent =
-    { count: int
-    ; delta: int
-    ; timestamp: DateTime
-    ; extra: TreesExtra option
-    } with
-        static member Zero =
-            { count = 0
-            ; delta = 0
-            ; timestamp = DateTime.MinValue
-            ; extra = None
-            }
-
-
-module private TreesEventParser =
-
-    let private parseAs parser ((source: Match), (group: int)) =
-        // Note: Group at 0-index represents whole regex match.
-        source.Groups.[group + 1].Value
-        |> parser
-
-    let private asStr =
-        parseAs (fun v -> v.Trim())
-
-    let private asInt groupMatch =
-        (asStr groupMatch).Replace(",", String.Empty)
-        |> int
-
-    let private asDec groupMatch =
-        (asStr groupMatch).Trim('%')
-        |> decimal
-
-
-    let private matchLike pattern action =
-        fun input ->
-            let rules = RegexOptions.IgnoreCase ||| RegexOptions.CultureInvariant
-            let result = Regex.Match(input, pattern, rules)
-            match result.Success with
-            | true -> action result |> Some
-            | false -> None
-
-
-    type private MatchSetter = TreesEvent -> TreesEvent
-    type private LineMatcher = string -> MatchSetter option
-
-    let private makeTweetMatcher (lineMatchers: LineMatcher list) =
-        fun (tweetLines: string list) ->
-            match lineMatchers.Length = tweetLines.Length with
-            | false -> None
-            | true ->
-                let matchSetters =
-                    Seq.zip lineMatchers tweetLines
-                    |> Seq.map (fun (matcher, line) -> matcher line)
-                    |> List.ofSeq
-
-                match matchSetters |> List.forall Option.isSome with
-                | false -> None
-                | true ->
-                    let applyAt event (setter: MatchSetter option)
-                        = setter.Value event
-
-                    matchSetters
-                    |> Seq.fold applyAt TreesEvent.Zero
-                    |> Some
-
-
-    let private tweetMatcherExtra =
-        (* Example Tweet:
-            Current #TeamTrees count: 20,342,361!
-            Up by 3694 in the last hour.
-            Hourly average is 5689. Expected to reach goal in -13 days!
-            100.17% of the way there!
-        *)
-
-        let setExtraOf event setter =
-            let extra = event.extra |> Option.defaultValue TreesExtra.Zero
-            { event with extra = Some <| setter extra }
-
-        makeTweetMatcher
-            [ matchLike @"count: (\S+?)!"
-                <| fun result event ->
-                    { event with count = (result, 0) |> asInt }
-
-            ; matchLike @"up by (\d+)"
-                <| fun result event ->
-                    { event with delta = (result, 0) |> asInt }
-
-            ; matchLike @"average is (\d+).+goal in (\S+)"
-                <| fun result event ->
-                    let avg = (result, 0) |> asInt
-                    let goalEta = (result, 1) |> asStr
-                    setExtraOf event
-                        <| fun extra ->
-                            { extra with avg = avg; goalEta = goalEta }
-
-            ; matchLike @"(\d+\.\d+%) of the way"
-                <| fun result event ->
-                    let target = (result, 0) |> asDec
-                    setExtraOf event
-                        <| fun extra ->
-                            { extra with target = target }
+    let serializeAs (description: string) (context: Context) (tweets: TweetItem list) =
+        let infoLines =
+            let twitter = context.config.twitterDisplayName
+            let page = context.config.twitterPageUrl
+            [ "Tweets gathered with FSharp-SandBox SeleniumViaCanopy idea project"
+            ; sprintf "From user: %s through %s" twitter page
+            ; sprintf "Loaded at: %s" (Time.asStamp' Time.Now)
             ]
 
+        let tweetsResult =
+            tweets |> List.map (fun tweet ->
+                {| tweet = tweet.tweetData
+                ;  selectingTime = tweet.selecting.Ticks
+                ;  parsingTime = tweet.parsing.Ticks
+                |}
+            )
 
-    let from (tweet: TweetData) =
+        let serializedLines =
+            {| _info = infoLines
+            ;  tweets = tweetsResult
+            |}
+            |> Json.serialize
+            |> Array.singleton
 
-        let notEmptyLine line =
-            not <| String.IsNullOrWhiteSpace(line)
+        let filename = sprintf "tweets %s.json" description
+        let storage = context.executor.storage
+        let identity = context.config.executionIdentity
 
-        let lines =
-            tweet.content.Split('\n')
-            |> Seq.map (fun x -> x.Trim())
-            |> Seq.where notEmptyLine
-            |> List.ofSeq
-
-        let matched =
-            [ tweetMatcherExtra ]
-            |> Seq.tryPick (fun matcher -> matcher lines)
-
-        match matched with
-        | None -> Error ("Unknown format", tweet)
-        | Some treesEvent ->
-            { treesEvent with timestamp = tweet.timestamp }
-            |> Ok
+        storage.SaveFileAs identity filename serializedLines
 
 
-let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
+let tweetsUntil (tweetsLimit: DateTime) (context: Context) =
+
+    let twitterDisplayName =
+        context.config.twitterDisplayName
+
+    let twitterPageUrl =
+        context.config.twitterPageUrl
 
     let log message =
-        context.log.Info message
+        context.executor.log.Info message
 
     let screenshotAs description =
-        context.storage.ScreenshotAs executionIdentity description
+        let storage = context.executor.storage
+        let identity = context.config.executionIdentity
+        storage.ScreenshotAs identity description
 
     let waitForNextStep () =
         // sleep 1
@@ -345,7 +218,7 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
         |> log
 
         screenshotAs "expected Twitter profile"
-        headerSelector == tweeterUserName
+        headerSelector == twitterDisplayName
 
         waitForNextStep()
 
@@ -368,9 +241,9 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
 
 
     let openTwitterPage() =
-        log <| sprintf "Opening page: '%s'..." tweetsPage
+        log <| sprintf "Opening page: '%s'..." twitterPageUrl
 
-        url tweetsPage
+        url twitterPageUrl
         screenshotAs "page opened"
         waitForNextStep()
 
@@ -432,11 +305,15 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
 
                 let tweetItem =
                     { tweetData =
-                        { timestamp = tweet.at
-                        ; tweetUrl = tweet.url
+                        { tweetUrl = tweet.url
                         ; twitter = tweet.by.handle
+                        ; timestamp = tweet.at
                         ; content = tweet.content.Text
+                        ; replies = tweet.stats.replies
+                        ; retweets = tweet.stats.retweets
+                        ; favorites = tweet.stats.favorites
                         }
+                    ; gatheredAt = Time.Now
                     ; selecting = selecting
                     ; parsing = parsing
                     }
@@ -468,14 +345,14 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
 
         let serializeAs (description: string) (tweets: TweetItem list) =
             log <| sprintf "Serializing %d tweets..." tweets.Length
-            tweets |> TweetItem.serialize description context.storage
+            tweets |> TweetItem.serializeAs description context
             tweets
 
         let serializeBatch i batch =
             let batch = List.ofArray batch
             match i = 0 && batch.Length < batchSize with
             | false ->
-                let n = sprintf "p.%03d" (i + 1)
+                let n = sprintf "b.%03d" (i + 1)
                 serializeAs n batch
             | true ->
                 batch
@@ -500,33 +377,21 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Executor.Context) =
         tweets
 
 
-    let loadTweetsFrom (filename: string) =
-        log <| sprintf "Loading and deserializing tweets from '%s' file." filename
-        let (tweets, loading) =
-            Time.watchThat <| fun () ->
-                TweetItem.deserializeData filename context.storage
-
-        (List.length tweets, Time.sec00 loading)
-        ||> sprintf "Loaded and deserialized %d tweets, withing: %s."
-        |> log
-
-        tweets
-
-
     fun _ ->
+        // Note: Since some time, Twitter is A/B testing a new styles system.
+        //       It does not use "human-readable" CSS' classes, thus this module
+        //       will not work sometimes or at all in a near future :(
         openTwitterPage()
         gatherTweets()
-        // loadTweetsFrom "tweets.json"
-        |> Seq.map TreesEventParser.from
-        |> Seq.iter (fun result ->
-            log <| sprintf "Got result:\n%A" result
+        |> Seq.iter (fun tweet ->
+            sprintf "Got tweet: %A" tweet
+            |> log
 
-            // TODO: use it somehow!
             waitForNextStep()
         )
 
 
-let tweetsLastDays (lastDays: int) (context: Executor.Context) =
+let tweetsLastDays (lastDays: int) (context: Context) =
     let limit =
         TimeSpan.FromDays(float lastDays)
         |> DateTime.UtcNow.Subtract

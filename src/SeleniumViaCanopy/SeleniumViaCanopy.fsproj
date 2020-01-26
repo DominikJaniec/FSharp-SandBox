@@ -12,7 +12,7 @@
     <Compile Include="Tools/Element.fs" />
     <Compile Include="Tools/WebTools.fs" />
     <Compile Include="Executor.fs" />
-    <Compile Include="TwitterTreesUpdates.fs" />
+    <Compile Include="TweetsGatherer.fs" />
     <Compile Include="Examples.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
