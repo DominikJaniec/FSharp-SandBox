@@ -153,10 +153,12 @@ module TweetItem =
     let serializeAs (description: string) (context: Context) (tweets: TweetItem list) =
         let infoLines =
             let twitter = context.config.twitterDisplayName
-            let page = context.config.twitterPageUrl
+            let twitterPage = context.config.twitterPageUrl
+            let tweetsCount = tweets.Length
+            let timestamp = Time.asStamp' Time.Now
             [ "Tweets gathered with FSharp-SandBox SeleniumViaCanopy idea project"
-            ; sprintf "From user: %s through %s" twitter page
-            ; sprintf "Loaded at: %s" (Time.asStamp' Time.Now)
+            ; sprintf "From user: %s through %s" twitter twitterPage
+            ; sprintf "Serialized %i Tweet(s) at: %s UTC" tweetsCount timestamp
             ]
 
         let tweetsResult =
@@ -257,29 +259,96 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Context) =
     let getTweetsUntilLimit() =
         let tweetSelector = TweetParser.selector + ":not(.js-pinned)"
 
-        let prefixIter i =
-            i + 1 |> sprintf "%05d"
+        let logIterPrefixedLines i = function
+            | header :: messages ->
+                sprintf "%05i. %s" (i + 1) header |> log
+                messages |> Seq.iter log
+            | [] -> failsWith "What?!"
 
         let selectTweetAt index =
-            try
+            let selectTweet() =
                 // Note: Selecting via `nth` keeps getting slower
                 //       for older (higher i's) Tweets.
-                // Pleas be patient...
+                // Please be patient...
                 let element = nth index tweetSelector
                 WebTools.highlightIt element
-                element |> Some
+                element
 
-            with ex ->
-                [ sprintf "%s. Got exception when selecting tweet:" <| prefixIter index
-                ; ex.ToString()
-                ; "No more tweets will be loaded."
-                ] |> Seq.iter log
+            let isTrueEndOfTweetStream() =
+                let someElementIsDisplayed (someElement: IWebElement option) =
+                    someElement |> Option.filter (fun el -> el.Displayed)
+
+                let resolveVisibleBackToTopButton() =
+                    someElement ".stream-footer .stream-end"
+                    |> Option.bind (someElementWithin "button.back-to-top")
+                    |> someElementIsDisplayed
+
+                let resolveVisibleTryAgainButton() =
+                    someElement ".stream-fail-container"
+                    |> Option.bind (someElementWithin "a.try-again-after-whale")
+                    |> someElementIsDisplayed
+
+                match resolveVisibleBackToTopButton() with
+                | Some toTop ->
+                    WebTools.highlightIt toTop
+                    true
+                | None ->
+                    match resolveVisibleTryAgainButton() with
+                    | Some tryAgain ->
+                        WebTools.highlightIt tryAgain
+                        click tryAgain
+                        false
+                    | None -> false
+
+            let isIndexOutsideList (ex: Exception) =
+                match ex with
+                | :? ArgumentException as aex ->
+                    aex.Message.StartsWith
+                        "The index was outside the range of elements in the list."
+                | _ -> false
+
+            let thusNoMoreTweetsLoaded details =
+                let noMoreTweets = "Thus, no more Tweets will be loaded."
+                List.concat [ details; [ noMoreTweets ] ]
+                |> logIterPrefixedLines index
                 None
 
+            let triesLimit = 7
+
+            let rec trySelect tryNumber =
+                match tryNumber <= triesLimit with
+                | true ->
+                    try
+                        selectTweet()
+                        |> Some
+
+                    with ex when isIndexOutsideList ex ->
+                        match isTrueEndOfTweetStream() with
+                        | false ->
+                            let tryAgainSleep = 42
+
+                            [ "Got exception when selecting Tweet:"
+                            ; ex.ToString()
+                            ; sprintf "Going to try again (%i/%i) after %i seconds..." tryNumber triesLimit tryAgainSleep
+                            ] |> logIterPrefixedLines index
+
+                            // Let's wait, maybe internet will fix itself.
+                            sleep tryAgainSleep
+                            trySelect (tryNumber + 1)
+
+                        | true ->
+                            [ "Reached end of Tweets' stream." ]
+                            |> thusNoMoreTweetsLoaded
+
+                | false ->
+                    [ sprintf "Exceeded number of tries: %i." triesLimit ]
+                    |> thusNoMoreTweetsLoaded
+
+            trySelect 1
+
         let parseTweetAt index element =
-            (prefixIter index, element)
-            ||> sprintf "%s. Parsing as Tweet: %A..."
-            |> log
+            [ sprintf "Parsing as Tweet: %A..." element ]
+            |> logIterPrefixedLines index
 
             TweetParser.from element
 
@@ -300,7 +369,7 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Context) =
                         parseTweetAt index element
 
                 (identity tweet, Time.sec00 selecting, Time.sec00 parsing)
-                |||> sprintf "Got tweet %s - selected: %s, parsed: %s."
+                |||> sprintf "Got Tweet %s - selected: %s, parsed: %s."
                 |> log
 
                 let tweetItem =
@@ -344,7 +413,7 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Context) =
             |> Seq.chunkBySize batchSize
 
         let serializeAs (description: string) (tweets: TweetItem list) =
-            log <| sprintf "Serializing %d tweets..." tweets.Length
+            log <| sprintf "Serializing %d Tweets..." tweets.Length
             tweets |> TweetItem.serializeAs description context
             tweets
 
@@ -371,24 +440,21 @@ let tweetsUntil (tweetsLimit: DateTime) (context: Context) =
                 |> List.map TweetItem.dataOf
 
         (List.length tweets, Time.minSec00 gathering, Time.sec00 serializing)
-        |||> sprintf "Gathered %d tweets, within: %s, serialized: %s."
+        |||> sprintf "Gathered %d Tweets, within: %s, serialized: %s."
         |> log
 
         tweets
 
 
     fun _ ->
-        // Note: Since some time, Twitter is A/B testing a new styles system.
+        // Note: Since some time, Twitter is A/B testing a new Web Styles system.
         //       It does not use "human-readable" CSS' classes, thus this module
         //       will not work sometimes or at all in a near future :(
         openTwitterPage()
         gatherTweets()
-        |> Seq.iter (fun tweet ->
-            sprintf "Got tweet: %A" tweet
-            |> log
-
-            waitForNextStep()
-        )
+        |> Seq.length
+        |> sprintf "Found and serialized %d Tweets."
+        |> log
 
 
 let tweetsLastDays (lastDays: int) (context: Context) =
