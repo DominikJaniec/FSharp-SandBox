@@ -50,6 +50,7 @@ let core =
 
 let ideas =
   {| SeleniumViaCanopy = "SeleniumViaCanopy"
+  ;  TwitterTeamTreesUpdates = "TwitterTeamTreesUpdates"
   |}
 
 
@@ -69,13 +70,16 @@ Target.create core.Continuum <| fun _ ->
 
 Target.create core.Build <| fun _ ->
   logHeader "Executing SandBox Build"
-  [ ideas.SeleniumViaCanopy ]
-  |> List.iter SandBox.buildProject
+  [ ideas.SeleniumViaCanopy
+  ; ideas.TwitterTeamTreesUpdates
+  ] |> List.iter SandBox.buildProject
 
 
 Target.create ideas.SeleniumViaCanopy <| fun _ ->
   SandBox.executeProject ideas.SeleniumViaCanopy
 
+Target.create ideas.TwitterTeamTreesUpdates <| fun _ ->
+  SandBox.executeProject ideas.TwitterTeamTreesUpdates
 
 // *** Define Dependencies ***
 
@@ -83,6 +87,7 @@ core.Init ==> core.Build
 core.Init ==> core.Continuum
 core.Continuum ==> core.Build
 core.Continuum ==> ideas.SeleniumViaCanopy
+core.Continuum ==> ideas.TwitterTeamTreesUpdates
 
 
 // *** Start Build ***

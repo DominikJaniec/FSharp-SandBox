@@ -35,6 +35,21 @@
                 "panel": "dedicated"
             },
             "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "idea: TwitterTeamTreesUpdates",
+            "command": "fake",
+            "type": "shell",
+            "args": [
+                "build",
+                "--target=TwitterTeamTreesUpdates"
+            ],
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": "$msCompile"
         }
     ]
 }
