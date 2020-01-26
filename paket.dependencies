@@ -3,5 +3,7 @@ source https://api.nuget.org/v3/index.json
 nuget canopy
 nuget FSharp.Core
 nuget Fake.DotNet.Cli
+nuget FSharp.Data
 nuget FSharp.Json
 nuget Selenium.WebDriver.GeckoDriver
+nuget XPlot.Plotly

@@ -100,6 +100,9 @@ NUGET
       System.Net.Http (>= 4.3.4) - restriction: || (>= net462) (>= netstandard2.0)
       System.ValueTuple (>= 4.4) - restriction: >= net462
     FSharp.Core (4.7)
+    FSharp.Data (3.3.3)
+      FSharp.Core (>= 4.0.0.1) - restriction: >= net45
+      FSharp.Core (>= 4.3.4) - restriction: && (< net45) (>= netstandard2.0)
     FSharp.Json (0.4)
       FSharp.Core (>= 4.6.2) - restriction: >= netstandard2.0
     Microsoft.Build (16.4) - restriction: || (>= net462) (>= netstandard2.0)
@@ -162,7 +165,7 @@ NUGET
       Microsoft.Build.Tasks.Core (>= 15.8.166) - restriction: && (< net46) (>= netstandard2.0)
       Microsoft.Build.Utilities.Core (>= 14.3) - restriction: >= net46
       Microsoft.Build.Utilities.Core (>= 15.8.166) - restriction: && (< net46) (>= netstandard2.0)
-    Newtonsoft.Json (12.0.3) - restriction: || (>= net462) (>= netstandard2.0)
+    Newtonsoft.Json (12.0.3)
     NuGet.Common (5.4) - restriction: >= netstandard2.0
       NuGet.Frameworks (>= 5.4) - restriction: >= netstandard2.0
       System.Diagnostics.Process (>= 4.3) - restriction: && (< net472) (>= netstandard2.0)
@@ -711,3 +714,6 @@ NUGET
       System.Xml.ReaderWriter (>= 4.3) - restriction: && (< monoandroid) (< monotouch) (< net46) (>= netstandard1.3) (< xamarinios) (< xamarinmac) (< xamarintvos) (< xamarinwatchos)
       System.Xml.XmlDocument (>= 4.3) - restriction: || (&& (< monoandroid) (< monotouch) (>= netstandard1.3) (< xamarinios) (< xamarinmac) (< xamarintvos) (< xamarinwatchos)) (>= net46)
       System.Xml.XPath (>= 4.3) - restriction: || (&& (< monoandroid) (< monotouch) (>= netstandard1.3) (< xamarinios) (< xamarinmac) (< xamarintvos) (< xamarinwatchos)) (>= net46)
+    XPlot.Plotly (3.0.1)
+      FSharp.Core (>= 4.5.2)
+      Newtonsoft.Json (>= 12.0.2)
