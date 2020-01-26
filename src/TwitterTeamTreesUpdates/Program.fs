@@ -1,6 +1,6 @@
 ﻿open System
 open Continuum.Common
-open System.IO
+open TwitterTeamTreesUpdates
 
 [<Literal>]
 let EXIT_SUCCESS = 0
@@ -11,10 +11,7 @@ let main argv =
 
     Runtime.fixCurrentDirectory()
 
-    printfn "All available files:"
-    Directory.EnumerateFiles "."
-    |> Seq.iteri (fun i file ->
-        printfn "%3i. '%s'" (i + 1) file
-    )
+    Analyzer.tweetsSourceFile
+    |> Analyzer.analyzeTeamTrees
 
     EXIT_SUCCESS

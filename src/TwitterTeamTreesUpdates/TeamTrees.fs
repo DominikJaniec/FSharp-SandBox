@@ -1,5 +1,10 @@
+namespace TwitterTeamTreesUpdates
 
-type private TreesExtra =
+open System
+open System.Text.RegularExpressions
+
+
+type Extra =
     { avg: int
     ; target: decimal
     ; goalEta: string
@@ -10,11 +15,11 @@ type private TreesExtra =
             ; goalEta = "unknown"
             }
 
-type private TreesEvent =
+type TeamTrees =
     { count: int
     ; delta: int
     ; timestamp: DateTime
-    ; extra: TreesExtra option
+    ; extra: Extra option
     } with
         static member Zero =
             { count = 0
@@ -24,7 +29,7 @@ type private TreesEvent =
             }
 
 
-module private TreesEventParser =
+module TeamTreesParser =
 
     let private parseAs parser ((source: Match), (group: int)) =
         // Note: Group at 0-index represents whole regex match.
@@ -52,7 +57,7 @@ module private TreesEventParser =
             | false -> None
 
 
-    type private MatchSetter = TreesEvent -> TreesEvent
+    type private MatchSetter = TeamTrees -> TeamTrees
     type private LineMatcher = string -> MatchSetter option
 
     let private makeTweetMatcher (lineMatchers: LineMatcher list) =
@@ -72,7 +77,7 @@ module private TreesEventParser =
                         = setter.Value event
 
                     matchSetters
-                    |> Seq.fold applyAt TreesEvent.Zero
+                    |> Seq.fold applyAt TeamTrees.Zero
                     |> Some
 
 
@@ -85,7 +90,7 @@ module private TreesEventParser =
         *)
 
         let setExtraOf event setter =
-            let extra = event.extra |> Option.defaultValue TreesExtra.Zero
+            let extra = event.extra |> Option.defaultValue Extra.Zero
             { event with extra = Some <| setter extra }
 
         makeTweetMatcher
@@ -114,24 +119,21 @@ module private TreesEventParser =
             ]
 
 
-    let from (tweet: TweetData) =
+    let from (tweet: Tweet) =
 
         let notEmptyLine line =
             not <| String.IsNullOrWhiteSpace(line)
 
         let lines =
-            tweet.content.Split('\n')
-            |> Seq.map (fun x -> x.Trim())
-            |> Seq.where notEmptyLine
-            |> List.ofSeq
+            tweet.contentLines
+            |> List.where notEmptyLine
 
         let matched =
             [ tweetMatcherExtra ]
             |> Seq.tryPick (fun matcher -> matcher lines)
 
         match matched with
-        | None -> Error ("Unknown format", tweet)
+        | None -> Error "Unknown format"
         | Some treesEvent ->
             { treesEvent with timestamp = tweet.timestamp }
             |> Ok
-

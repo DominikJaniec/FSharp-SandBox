@@ -7,10 +7,13 @@
     <ProjectReference Include="..\Continuum.Common\Continuum.Common.fsproj" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Tweet.fs" />
+    <Compile Include="TeamTrees.fs" />
+    <Compile Include="Analyzer.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="all-tweets.json">
+    <Content Include="Tweets-TeamTrees-Updates.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
