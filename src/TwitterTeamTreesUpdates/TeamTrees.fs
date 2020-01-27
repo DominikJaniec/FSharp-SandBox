@@ -3,50 +3,46 @@ namespace TwitterTeamTreesUpdates
 open System
 open System.Text.RegularExpressions
 
-
-type Extra =
-    { avg: int
-    ; target: decimal
-    ; goalEta: string
-    } with
-        static member Zero =
-            { avg = 0
-            ; target = 0m
-            ; goalEta = "unknown"
-            }
-
 type TeamTrees =
     { count: int
     ; delta: int
-    ; timestamp: DateTime
-    ; extra: Extra option
+    ; avg: int option
+    ; target: decimal option
+    ; goalEta: string option
     } with
         static member Zero =
             { count = 0
             ; delta = 0
-            ; timestamp = DateTime.MinValue
-            ; extra = None
+            ; avg = None
+            ; target = None
+            ; goalEta = None
             }
 
 
 module TeamTreesParser =
 
-    let private parseAs parser ((source: Match), (group: int)) =
+    type private MatchedGroup =
+        Match * int
+
+    let private parseAs parser (matchedGroup: MatchedGroup) =
         // Note: Group at 0-index represents whole regex match.
-        source.Groups.[group + 1].Value
+        let (sourceMatch, groupPosition) = matchedGroup
+        sourceMatch.Groups.[groupPosition + 1].Value
         |> parser
+
+    let private asJust =
+        parseAs id
 
     let private asStr =
         parseAs (fun v -> v.Trim())
 
-    let private asInt groupMatch =
-        (asStr groupMatch).Replace(",", String.Empty)
+    let private asInt matchedGroup =
+        (asStr matchedGroup).Replace(",", String.Empty)
         |> int
 
-    let private asDec groupMatch =
-        (asStr groupMatch).Trim('%')
+    let private asDec matchedGroup =
+        (asStr matchedGroup).Trim('%')
         |> decimal
-
 
     let private matchLike pattern action =
         fun input ->
@@ -80,42 +76,50 @@ module TeamTreesParser =
                     |> Seq.fold applyAt TeamTrees.Zero
                     |> Some
 
+    let private matchersSimple : LineMatcher list =
+        (* Example Tweet:
+            Current #TeamTrees count: 16,364,940!
+            Up by 1284 in the last hour|tweet.
+        *)
 
-    let private tweetMatcherExtra =
+        [ matchLike @"#TeamTrees count: (\S+?)!?"
+            <| fun result event ->
+                let count = (result, 0) |> asInt
+                { event with count = count }
+
+        ; matchLike @"up by (\d+)"
+            <| fun result event ->
+                let delta = (result, 0) |> asInt
+                { event with delta = delta }
+        ]
+
+    let private matchersExtended : LineMatcher list =
         (* Example Tweet:
             Current #TeamTrees count: 20,342,361!
             Up by 3694 in the last hour.
-            Hourly average is 5689. Expected to reach goal in -13 days!
+            Hourly average is NaN. Expected to reach goal in -13 days!
             100.17% of the way there!
         *)
 
-        let setExtraOf event setter =
-            let extra = event.extra |> Option.defaultValue Extra.Zero
-            { event with extra = Some <| setter extra }
+        let asNoneOr parser matchedGroup =
+            match matchedGroup |> asJust with
+            | "NaN" -> None
+            | _ ->
+                matchedGroup
+                |> parser
+                |> Some
 
-        makeTweetMatcher
-            [ matchLike @"count: (\S+?)!"
+        List.append matchersSimple
+            [ matchLike @"average is (NaN|\d+)\..+ goal in (NaN|\S+)"
                 <| fun result event ->
-                    { event with count = (result, 0) |> asInt }
+                    let avg = (result, 0) |> asNoneOr asInt
+                    let goalEta = (result, 1) |> asNoneOr asStr
+                    { event with avg = avg; goalEta = goalEta }
 
-            ; matchLike @"up by (\d+)"
-                <| fun result event ->
-                    { event with delta = (result, 0) |> asInt }
-
-            ; matchLike @"average is (\d+).+goal in (\S+)"
-                <| fun result event ->
-                    let avg = (result, 0) |> asInt
-                    let goalEta = (result, 1) |> asStr
-                    setExtraOf event
-                        <| fun extra ->
-                            { extra with avg = avg; goalEta = goalEta }
-
-            ; matchLike @"(\d+\.\d+%) of the way"
+            ; matchLike @"(\d+(\.\d+)?%) of the way"
                 <| fun result event ->
                     let target = (result, 0) |> asDec
-                    setExtraOf event
-                        <| fun extra ->
-                            { extra with target = target }
+                    { event with target = Some target }
             ]
 
 
@@ -129,11 +133,10 @@ module TeamTreesParser =
             |> List.where notEmptyLine
 
         let matched =
-            [ tweetMatcherExtra ]
+            [ matchersSimple; matchersExtended ]
+            |> Seq.map makeTweetMatcher
             |> Seq.tryPick (fun matcher -> matcher lines)
 
         match matched with
-        | None -> Error "Unknown format"
-        | Some treesEvent ->
-            { treesEvent with timestamp = tweet.timestamp }
-            |> Ok
+        | None -> Error "Unknown format!"
+        | Some treesEvent -> Ok treesEvent

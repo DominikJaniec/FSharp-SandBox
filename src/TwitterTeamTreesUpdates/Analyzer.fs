@@ -1,30 +1,55 @@
 namespace TwitterTeamTreesUpdates
 
+open System
+open Continuum.Common
+
 
 module Analyzer =
 
     let tweetsSourceFile = "Tweets-TeamTrees-Updates.json"
 
+    type private ParseFold =
+        { parsed: (DateTime * TeamTrees) list
+        ; errors: (string * Tweet) list
+        } with
+            static member Zero =
+                { parsed = []
+                ; errors = []
+                }
+
+    let private asTeamTrees (state: ParseFold) tweet =
+        match TeamTreesParser.from tweet with
+        | Ok update ->
+            let result = (tweet.timestamp, update)
+            { state with parsed = result :: state.parsed }
+
+        | Error msg ->
+            let result = (msg, tweet)
+            { state with errors = result :: state.errors }
+
     let private toTeamTreesUpdates (tweets: Tweet list) =
-        let parse tweet =
-            match TeamTreesParser.from tweet with
-            | Ok update -> printf "."; update
-            | Error msg ->
-                let header = [ "" ; sprintf "Got error '%s' while parsing Tweet:" msg ]
-                let content = tweet.contentLines |> List.map (fun l -> "  | " + l)
-                let message = List.concat [ header; content ]
-                message |> List.iter (printfn "%s")
-                failwith "Implement more formats!"
-
         tweets.Length
-        |> printf "Parsing %i Tweets as TeamTrees' Updates.."
+        |> printfn "Parsing %i Tweets as TeamTrees' Updates..."
 
-        tweets |> List.map parse
+        let result =
+            tweets |> List.fold asTeamTrees ParseFold.Zero
+
+        (result.parsed.Length, result.errors.Length)
+        ||> printfn "Successfully parsed %i Tweets, and got %i errors:"
+        result.errors |> List.iteri (fun i (message, tweet) ->
+            let tweetStamp = Time.asStamp' tweet.timestamp
+            let tweetInfo = sprintf "%s %s" tweetStamp tweet.url
+            printfn "%4i. %s | %s" (i + 1) message tweetInfo
+            tweet.contentLines |> List.iter (printfn "\t%s")
+        )
+
+        result.parsed
+
 
     let analyzeTeamTrees (tweetsSource: string) =
-        let tweets =
-            Tweet.loadFrom tweetsSource
+        Tweet.loadFrom tweetsSource
+        |> toTeamTreesUpdates
+        |> ignore
 
-        tweets |> toTeamTreesUpdates |> ignore
         failwith "Let's analyze those events!"
         ()
