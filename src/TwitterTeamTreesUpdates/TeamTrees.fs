@@ -3,15 +3,18 @@ namespace TwitterTeamTreesUpdates
 open System
 open System.Text.RegularExpressions
 
-type TeamTrees =
-    { count: int
+
+type TeamTreesUpdate =
+    { timestamp: DateTime
+    ; count: int
     ; delta: int
     ; avg: int option
     ; target: decimal option
     ; goalEta: string option
     } with
         static member Zero =
-            { count = 0
+            { timestamp = DateTime.MinValue
+            ; count = 0
             ; delta = 0
             ; avg = None
             ; target = None
@@ -53,7 +56,7 @@ module TeamTreesParser =
             | false -> None
 
 
-    type private MatchSetter = TeamTrees -> TeamTrees
+    type private MatchSetter = TeamTreesUpdate -> TeamTreesUpdate
     type private LineMatcher = string -> MatchSetter option
 
     let private makeTweetMatcher (lineMatchers: LineMatcher list) =
@@ -72,8 +75,9 @@ module TeamTreesParser =
                     let applyAt event (setter: MatchSetter option)
                         = setter.Value event
 
+                    let state = TeamTreesUpdate.Zero
                     matchSetters
-                    |> Seq.fold applyAt TeamTrees.Zero
+                    |> Seq.fold applyAt state
                     |> Some
 
     let private matchersSimple : LineMatcher list =
@@ -139,4 +143,7 @@ module TeamTreesParser =
 
         match matched with
         | None -> Error "Unknown format!"
-        | Some treesEvent -> Ok treesEvent
+        | Some treesEvent ->
+            let stamp = tweet.timestamp
+            { treesEvent with timestamp = stamp }
+            |> Ok

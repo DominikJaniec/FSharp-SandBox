@@ -9,6 +9,7 @@
   <ItemGroup>
     <Compile Include="Tweet.fs" />
     <Compile Include="TeamTrees.fs" />
+    <Compile Include="UpdatesLoader.fs" />
     <Compile Include="Analyzer.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

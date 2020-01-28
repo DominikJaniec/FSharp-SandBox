@@ -11,7 +11,8 @@ let main argv =
 
     Runtime.fixCurrentDirectory()
 
-    Analyzer.tweetsSourceFile
-    |> Analyzer.analyzeTeamTrees
+    UpdatesLoader.tweetsSourceFile
+    |> UpdatesLoader.loadUpdates
+    |> Analyzer.analyze
 
     EXIT_SUCCESS
