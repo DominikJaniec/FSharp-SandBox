@@ -86,7 +86,7 @@ module TeamTreesParser =
             Up by 1284 in the last hour|tweet.
         *)
 
-        [ matchLike @"#TeamTrees count: (\S+?)!?"
+        [ matchLike @"#TeamTrees count: ([0-9,]+)!?"
             <| fun result event ->
                 let count = (result, 0) |> asInt
                 { event with count = count }
