@@ -1,6 +1,7 @@
 #r "paket:
 nuget Fake.Core.Target
 nuget Fake.DotNet.Cli
+nuget Fake.DotNet.Paket
 //"
 
 open Fake.IO
@@ -9,9 +10,15 @@ open Fake.Core.TargetOperators
 open Fake.DotNet
 
 
-let logHeader header =
-  sprintf " --- %s ---" header
-  |> Trace.log
+let logAsHeader header =
+  let headLine = sprintf @"   \_  %s  _/  " header
+  let barLine =
+    let len = String.length header
+    System.String('=', len + 8)
+    |> sprintf "==+%s+=="
+
+  [ barLine; headLine; "" ]
+  |> List.iter Trace.log
 
 
 module SandBox =
@@ -26,7 +33,7 @@ module SandBox =
   let executeProject name =
     let path = projectFilePath name
     sprintf "Executing '%s' project" path
-    |> logHeader
+    |> logAsHeader
 
     DotNet.exec id "run" ("--project " + path)
     |> ignore
@@ -34,7 +41,7 @@ module SandBox =
   let buildProject name =
     let path = projectFilePath name
     sprintf "Building '%s' project" path
-    |> logHeader
+    |> logAsHeader
 
     DotNet.build id path
 
@@ -53,33 +60,36 @@ let ideas =
   ;  TwitterTeamTreesUpdates = "TwitterTeamTreesUpdates"
   |}
 
-
 Target.create core.Help <| fun _ ->
-  logHeader "FSharp-SandBox by Dominik Janiec"
+  logAsHeader "FSharp-SandBox by Dominik Janiec"
   Target.listAvailable()
+  [ ""
+  ; "To run one of them, just execute command:"
+  ; "> dotnet fake -s build -t <TargetName>"
+  ; ""
+  ; "----"
+  ] |> List.iter Trace.log
+
 
 Target.create core.Init <| fun _ ->
-  logHeader "Initializing FSharp-SandBox"
-  ("paket", "--silent restore")
-  ||> CreateProcess.fromRawCommandLine
-  |> Proc.run
-  |> ignore
+  logAsHeader "Initializing FSharp-SandBox"
+  Paket.restore id
 
 Target.create core.Continuum <| fun _ ->
   SandBox.buildProject core.Continuum
 
 Target.create core.Build <| fun _ ->
-  logHeader "Executing SandBox Build"
+  logAsHeader "Executing SandBox Build"
   [ ideas.SeleniumViaCanopy
   ; ideas.TwitterTeamTreesUpdates
   ] |> List.iter SandBox.buildProject
-
 
 Target.create ideas.SeleniumViaCanopy <| fun _ ->
   SandBox.executeProject ideas.SeleniumViaCanopy
 
 Target.create ideas.TwitterTeamTreesUpdates <| fun _ ->
   SandBox.executeProject ideas.TwitterTeamTreesUpdates
+
 
 // *** Define Dependencies ***
 
