@@ -1,0 +1,14 @@
+GET /index.php HTTP/1.1
+Host: in-the-sky.org
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:103.0) Gecko/20100101 Firefox/103.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.7,pl;q=0.3
+Accept-Encoding: gzip, deflate, br
+DNT: 1
+Connection: keep-alive
+Cookie: location=%7B%22timezone%22%3A%22Europe%5C%2FWarsaw%22%2C%22town%22%3A3099434%2C%22verify%22%3A%22Gda%26%23324%3Bsk%22%2C%22skin%22%3A0%7D; pl_config_2017=%5B%5D; backpage=index.php
+Upgrade-Insecure-Requests: 1
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: none
+Sec-Fetch-User: ?1

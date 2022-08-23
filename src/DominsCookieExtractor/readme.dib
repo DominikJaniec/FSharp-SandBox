@@ -1,0 +1,143 @@
+#!markdown
+
+# Domin's Cookie Extractor
+
+Use with `input.http` file as Cookies' source,<br/>
+or provide it within `__RAW_INPUT__` below:
+
+#!fsharp
+
+let __INPUT_FILE__ = "input.http"
+let __INPUT_FILE__FORCE__ = true
+
+let __RAW_INPUT__ = """
+# or provide It here
+"""
+
+#!fsharp
+
+module InputFile =
+    open System.IO
+
+    let private whenPlausibleAsPath (path: string) =
+        let invalidChars = Path.GetInvalidPathChars()
+        let isInvalidChar ch =
+            invalidChars |> Array.contains ch
+
+        path.ToCharArray()
+        |> Seq.where isInvalidChar
+        |> Seq.isEmpty
+        |> function
+            | true -> Some path
+            | _ -> None
+
+    let private whenExistingFile (path: string) =
+        let fullPath =
+            if not <| Path.IsPathFullyQualified(path)
+            then Path.GetFullPath(path)
+            else path
+
+        if File.Exists(fullPath)
+        then Some fullPath
+        else None
+
+
+    let openTextFile path =
+        match String.IsNullOrWhiteSpace(path) with
+        | false -> path.Trim() |> Some
+        | _ -> None
+        |> Option.bind whenPlausibleAsPath
+        |> Option.bind whenExistingFile
+        |> Option.map File.OpenText
+
+#!fsharp
+
+module InputSource =
+    open System.Text.RegularExpressions
+
+    let private commentLinePattern =
+        Regex @"^\s*#"
+
+    let private readAllLines (source: TextReader) =
+        let nextLine () = source.ReadLine()
+        let isNotNull (x: string) =
+            x |> (not << isNull)
+
+        let mutable line = nextLine ()
+        [ while line |> isNotNull do
+            yield line
+            line <- nextLine ()
+        ]
+
+    let private readFileLines path =
+        let fromStream source =
+            use stream = source
+            stream |> readAllLines
+
+        InputFile.openTextFile path
+        |> Option.map fromStream
+
+    let private splitToLines text =
+        use stream = new StringReader(text)
+        stream |> readAllLines
+
+    let private withoutEmpty content =
+        let notEmpty line =
+            match line |> String.IsNullOrWhiteSpace with
+            | false -> line.TrimEnd() |> Some
+            | _ -> None
+
+        let notComment line =
+            commentLinePattern
+                .IsMatch(line)
+            |> not
+            
+        content
+        |> Seq.choose notEmpty
+        |> Seq.where notComment
+        |> Seq.toList
+
+
+    let getInputLines () =
+        let readInputFileLines () =
+            readFileLines __INPUT_FILE__
+            |> Option.map withoutEmpty
+
+        let fromRawInputLines () =
+            __RAW_INPUT__
+            |> splitToLines
+            |> withoutEmpty
+            |> Some
+
+        match __INPUT_FILE__FORCE__ with
+        | true -> readInputFileLines ()
+        | _ ->
+            fromRawInputLines ()
+            |> Option.orElseWith 
+                readInputFileLines
+
+#!fsharp
+
+module CookieSource =
+    let private tryExtract source =
+        Some $"Got: %s{source}"
+
+    let private tryFindCookies =
+        let restrict (lines: string list) =
+            Some lines.Head
+            
+        function
+        | [] -> None
+        | lines -> restrict lines
+
+
+    let get () =
+        InputSource.getInputLines ()
+        |> Option.bind tryFindCookies
+        |> Option.bind tryExtract
+        |> (function
+            | None -> Error "No-Input-Found"
+            | Some value -> value |> Ok
+        )
+
+CookieSource.get ()

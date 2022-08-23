@@ -1,0 +1,7 @@
+{
+    "recommendations": [
+        "humao.rest-client",
+        "Ionide.Ionide-fsharp",
+        "ms-dotnettools.dotnet-interactive-vscode"
+    ]
+}
