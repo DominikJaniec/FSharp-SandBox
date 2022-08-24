@@ -2,13 +2,13 @@
 
 # Domin's Cookie Extractor
 
-Use with `input.http` file as Cookies' source,<br/>
-or provide it within `__RAW_INPUT__` below:
+Use with `input.http` file as Cookies' source ([HTTP Request](https://developer.mozilla.org/en-US/docs/Web/HTTP/Messages#http_requests)),
+<br/> or provide it within `__RAW_INPUT__` text string just below:
 
 #!fsharp
 
 let __INPUT_FILE__ = "input.http"
-let __INPUT_FILE__FORCE__ = true
+let __INPUT_FILE__FORCE__ = false
 
 let __RAW_INPUT__ = """
 # or provide It here
@@ -92,22 +92,25 @@ module InputSource =
                 .IsMatch(line)
             |> not
             
-        content
-        |> Seq.choose notEmpty
-        |> Seq.where notComment
-        |> Seq.toList
+        let lines =
+            content
+            |> Seq.choose notEmpty
+            |> Seq.where notComment
+            |> Seq.toList
 
+        if not lines.IsEmpty
+        then lines |> Some
+        else None
 
     let getInputLines () =
         let readInputFileLines () =
             readFileLines __INPUT_FILE__
-            |> Option.map withoutEmpty
+            |> Option.bind withoutEmpty
 
         let fromRawInputLines () =
             __RAW_INPUT__
             |> splitToLines
             |> withoutEmpty
-            |> Some
 
         match __INPUT_FILE__FORCE__ with
         | true -> readInputFileLines ()
@@ -118,26 +121,147 @@ module InputSource =
 
 #!fsharp
 
-module CookieSource =
-    let private tryExtract source =
-        Some $"Got: %s{source}"
+module HttpMessage =
+    open System.Text.RegularExpressions
 
-    let private tryFindCookies =
-        let restrict (lines: string list) =
-            Some lines.Head
-            
-        function
+    let private whenLineMatch (pattern: Regex) line =
+        let result = pattern.Match(line)
+        match result.Success with
+        | true -> result |> Some
+        | _ -> None
+
+
+    type Header = 
+        { name: string
+        ; value: string
+        }
+
+    module Header =
+        let private pattern = 
+            Regex @"^(?<Name>\w+): (?<Value>.*)$"
+
+        let private toHeader (matched: Match) =
+            let get (what: string) =
+                matched.Groups[what].Value
+
+            { name = get "Name"
+            ; value = get "Value"
+            }
+
+        let parse line : Header option =
+            line 
+            |> whenLineMatch pattern
+            |> Option.map toHeader
+
+        let matches name (header: Header) =
+            StringComparer.OrdinalIgnoreCase
+                .Equals(name, header.name)
+            |> function 
+                | true -> header |> Some
+                | _ -> None
+
+
+    type Request =
+        { lines: string list
+        ; headers: Header list
+        }
+
+    module Request =
+        let hasHeader name (request: Request) =
+            request.headers
+            |> Seq.choose 
+                (Header.matches name)
+            |> Seq.tryHead
+
+
+module HttpMessages =
+    open HttpMessage
+
+    let parseRequest startLine request =
+        let getHeaders = 
+            Seq.choose Header.parse
+            >> Seq.toList
+
+        { lines = startLine :: request 
+        ; headers = request |> getHeaders
+        } |> Some
+
+#!fsharp
+
+module CookieSource =
+    open System.Text.RegularExpressions
+    open HttpMessage
+
+    let private header = "Cookie"
+
+    type Cookie =
+        { key: string
+        ; value: string
+        }
+
+    module Cookie =
+        let private pattern =
+            Regex @"(?<Key>.+)=(?<Value>.+)"
+
+        let fromHeader (header: Header) =
+            let toCookie value =
+                let matched = pattern.Match(value)
+                match matched.Success with
+                | false -> 
+                    $"Cannot parse %A{value} as Cookie entry"
+                    |> failwith
+
+                | true ->
+                    let get (what: string) =
+                        matched.Groups[what].Value
+
+                    { key = get "Key"
+                    ; value = get "Value"
+                    }
+
+            header.value.Split("; ")
+            |> Seq.map toCookie
+            |> Seq.toList
+
+
+    let private asCookieHeader = function
+        | [ line ] ->
+            Header.parse line
+            |> Option.bind
+                (Header.matches header)
+
+        | _ -> None
+
+    let private asHttpRequest = function
+        | startLine :: requestRest ->
+            (startLine, requestRest)
+            ||> HttpMessages.parseRequest
+            |> Option.bind 
+                (Request.hasHeader header)
+
         | [] -> None
-        | lines -> restrict lines
+
+    let private findCookies inputLines =
+        [ asHttpRequest
+        ; asCookieHeader
+        ]
+        |> Seq.choose ((|>) inputLines)
+        |> Seq.tryHead
+        |> Option.map 
+            (Cookie.fromHeader)
 
 
     let get () =
         InputSource.getInputLines ()
-        |> Option.bind tryFindCookies
-        |> Option.bind tryExtract
+        |> Option.bind findCookies
         |> (function
             | None -> Error "No-Input-Found"
             | Some value -> value |> Ok
         )
 
+
 CookieSource.get ()
+|> Result.map (List.skip 0 >> List.head)
+|> function
+    | Error er -> failwith er
+    | Ok cookies -> cookies
