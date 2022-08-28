@@ -6,7 +6,7 @@ Accept-Language: en-US,en;q=0.7,pl;q=0.3
 Accept-Encoding: gzip, deflate, br
 DNT: 1
 Connection: keep-alive
-Cookie: location=%7B%22timezone%22%3A%22Europe%5C%2FWarsaw%22%2C%22town%22%3A3099434%2C%22verify%22%3A%22Gda%26%23324%3Bsk%22%2C%22skin%22%3A0%7D; pl_config_2017=%5B%5D; backpage=index.php
+Cookie: location=%7B%22timezone%22%3A%22Europe%5C%2FWarsaw%22%2C%22town%22%3A3099434%2C%22verify%22%3A%22Gda%26%23324%3Bsk%22%2C%22skin%22%3A0%7D; backmsg1=3aXRoIEJhc2U2NCBzcGVsbCwgdGh1cyBpdCdzIHZlcnkgc2Vjd; pl_config_2017=%5B%5D; backmsg=VGhpcyBpcyB0aGUgQ29udGVudCBtYWdpY2FsbHkgZW5jb2RlZCB; backmsg2=XJlLCBvZiBjb3Vyc2UgQ2FwdGFpbiBPYnZpb3VzIQ==
 Upgrade-Insecure-Requests: 1
 Sec-Fetch-Dest: document
 Sec-Fetch-Mode: navigate

@@ -188,41 +188,72 @@ module HttpMessages =
 
 #!fsharp
 
+// namespace Continuum.Common
+    
+    type Singleton<'a> =
+        | NotSingleOne of ('a list) option
+        | SingleOne of 'a
+
+    module Singleton =
+        let defaultWith source = function
+            | NotSingleOne _ -> source ()
+            | SingleOne one -> one
+
+        let form = function
+            | [] -> NotSingleOne None
+            | [ item ] -> item |> SingleOne
+            | items ->
+                (items |> Some)
+                |> NotSingleOne 
+
+        let toList = function
+            | NotSingleOne None -> []
+            | NotSingleOne (Some list) -> list
+            | SingleOne singleton -> [ singleton ]
+
+
+    let printWithHeader header text =
+        [ String.replicate 69 "-"
+        ; ("---------  " + header)
+        ; text
+        ; ""
+        ] |> List.iter (printfn "%s")
+
+    let toTextList mapper =
+        List.map mapper
+        >> List.mapi (sprintf "%d. %s")
+        >> String.concat "\n"
+
+#!fsharp
+
+type Cookie =
+    { key: string
+    ; value: string
+    }
+
+module Cookie =
+    let toString (cookie: Cookie) =
+        let trimmed =
+            let limit = 42
+            let ending = "..."
+            let cv = cookie.value
+
+            match cv.Length <= limit with
+            | true -> cv
+            | _ ->
+                let stop = limit - ending.Length
+                cv.Substring(0, stop) + ending
+
+        $"%s{cookie.key} -> %s{trimmed}"
+
+#!fsharp
+
 module CookieSource =
     open System.Text.RegularExpressions
+    open Continuum_Common
     open HttpMessage
 
     let private header = "Cookie"
-
-    type Cookie =
-        { key: string
-        ; value: string
-        }
-
-    module Cookie =
-        let private pattern =
-            Regex @"(?<Key>.+)=(?<Value>.+)"
-
-        let fromHeader (header: Header) =
-            let toCookie value =
-                let matched = pattern.Match(value)
-                match matched.Success with
-                | false -> 
-                    $"Cannot parse %A{value} as Cookie entry"
-                    |> failwith
-
-                | true ->
-                    let get (what: string) =
-                        matched.Groups[what].Value
-
-                    { key = get "Key"
-                    ; value = get "Value"
-                    }
-
-            header.value.Split("; ")
-            |> Seq.map toCookie
-            |> Seq.toList
-
 
     let private asCookieHeader = function
         | [ line ] ->
@@ -240,6 +271,31 @@ module CookieSource =
                 (Request.hasHeader header)
 
         | [] -> None
+    
+    module private Cookie =
+        let private delimeter = "; "
+        let private pattern =
+            Regex @"(?<Key>.+?)=(?<Value>.+)"
+
+        let fromHeader (header: Header) =
+            let toCookie value =
+                let matched = pattern.Match(value)
+                match matched.Success with
+                | false -> 
+                    $"Cannot parse %A{value} as Cookie entry"
+                    |> failwith
+
+                | true ->
+                    let get (what: string) =
+                        matched.Groups[what].Value
+
+                    { key = get "Key"
+                    ; value = get "Value"
+                    }
+
+            header.value.Split(delimeter)
+            |> Seq.map toCookie
+            |> Seq.toList
 
     let private findCookies inputLines =
         [ asHttpRequest
@@ -250,18 +306,110 @@ module CookieSource =
         |> Option.map 
             (Cookie.fromHeader)
 
+    let private anything x = true
+    
+    let private byName name (c: Cookie) =
+        StringComparer.OrdinalIgnoreCase
+            .Equals(name, c.key)
 
-    let get () =
+    let matched filter =
+        List.choose <| fun (c: Cookie) -> 
+            let score = filter c
+            match score with
+            | false -> None
+            | _ ->
+                (score, c)
+                |> Some
+
+    let find filter =
         InputSource.getInputLines ()
         |> Option.bind findCookies
-        |> (function
-            | None -> Error "No-Input-Found"
-            | Some value -> value |> Ok
-        )
+        |> Option.map (matched filter)
+
+    let all () =
+        find anything
+        |> Option.map
+            (List.map snd)
+
+    let get name =
+        let gotOne =
+            (List.map snd)
+            >> Singleton.form
+            >> Some
+
+        find (byName name)
+        |> Option.bind gotOne
+
+    let combined prefix =
+        let prefixPattern =
+            let toRegex pattern =
+                let options = RegexOptions.IgnoreCase
+                Regex(pattern, options)
+
+            Regex.Escape(prefix)
+            |> sprintf "^%s(?<suffix>.*)"
+            |> toRegex
+
+        let isPrefixMatch (c: Cookie) =
+            prefixPattern.IsMatch(c.key)
+
+        let numSuffix (c: Cookie) =
+            let matched = prefixPattern.Match(c.key)
+            match matched.Success with
+            | false -> failwith $"how matched: {c.key}"
+            | _ ->
+                match matched.Groups["suffix"].Value with
+                | "" -> 0
+                | suffix ->
+                    match Int32.TryParse(suffix) with
+                    | (true, parsed) -> 
+                        parsed
+                    | (false, _) ->
+                        $"The '{prefix}' suffix is NAN: {c.key}"
+                        |> failwith
+
+        let orderCookies =
+            let orderedValue (c: Cookie) =
+                let order = c |> numSuffix
+                (order, c)
+
+            List.map (snd >> orderedValue)
+            >> List.sortBy fst
+
+        let combine =
+            let extract i (order, c: Cookie) =
+                if i <> order then
+                    $"Unexpected order as: {order} at: {i}, for: {c.key}"
+                    |> failwith
+                
+                c.value
+
+            List.mapi extract
+            >> String.concat ""
+            
+        find isPrefixMatch
+        |> Option.map orderCookies
+        |> Option.map combine
+
+#!fsharp
+
+let sourceCookie = "backmsg"
+let cookieValue =
+    CookieSource.combined sourceCookie
+    |> Option.defaultWith (fun _ ->
+        $"Cannot get combined value of %A{sourceCookie}."
+        |> failwith
+    )
+
+printWithHeader
+    $"Combined '%s{sourceCookie}' Cookie's value:"
+    cookieValue
 
 
-CookieSource.get ()
-|> Result.map (List.skip 0 >> List.head)
-|> function
-    | Error er -> failwith er
-    | Ok cookies -> cookies
+let decodedValue =
+    Convert.FromBase64String(cookieValue)
+    |> Encoding.UTF8.GetString
+
+printWithHeader
+    $"Value decoded from Base64:"
+    decodedValue
