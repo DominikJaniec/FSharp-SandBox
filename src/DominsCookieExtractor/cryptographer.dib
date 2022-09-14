@@ -1,0 +1,350 @@
+#!markdown
+
+# Cryptographer
+
+## Use certificate to code a message
+
+#!fsharp
+
+let __certificate =
+    {| dir = "certificates"
+    ;  file = "domins.pfx"
+    ;  secret = "minik"
+    |}
+
+#!markdown
+
+### Generate Keys Pair and Certificate
+
+Generate cert (pair of Keys):
+* `openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout certificates/domins.private.key -out certificates/domins.crt`
+
+Verify created certificate:
+* `openssl x509 -in certificates/domins.crt -text -noout`
+
+Convert to Windows X509 format:
+* `openssl pkcs12 -export -in certificates/domins.crt -inkey certificates/domins.private.key -out certificates/domins.pfx`
+
+#!fsharp
+
+/// certificate - instace details
+module Certificate =
+    open System.IO
+    open System.Security
+    open System.Security.Cryptography.X509Certificates
+
+
+    let private certificateSecret =
+        __certificate.secret
+
+    let private certificateFilePath =
+        [| __SOURCE_DIRECTORY__
+        ;  __certificate.dir
+        ;  __certificate.file
+        |] |>  Path.Combine
+
+    let private keyStorageFlags =
+        X509KeyStorageFlags.DefaultKeySet
+
+
+    let load () =
+        if not (File.Exists(certificateFilePath)) then
+            "Certificate file not found at:"
+            + $"\n%s{certificateFilePath}"
+            |> failwith
+
+        new X509Certificate2
+            ( certificateFilePath
+            , certificateSecret
+            , keyStorageFlags
+            )
+
+
+let certificate = Certificate.load ()
+{| subject = certificate.Subject
+;  thumbprint = certificate.Thumbprint
+|}
+
+#!markdown
+
+### Cryptographer configuration
+
+#!fsharp
+
+type Bytes = byte array
+
+type PipePiece =
+    Bytes -> Bytes
+
+type DuplexPipe =
+    { encoding: PipePiece
+    ; decoding: PipePiece
+    }
+
+type Pipeline =
+    DuplexPipe list
+
+#!fsharp
+
+module Cipher =
+    open System.Text.Encodings
+    open System.Security.Cryptography
+    open System.Security.Cryptography.X509Certificates
+
+    let encrypt (data: byte array): byte array =
+        let padding = RSAEncryptionPadding.Pkcs1
+        use rsa = certificate.GetRSAPublicKey()
+        rsa.Encrypt(data, padding)
+
+    let decrypt (data: byte array): byte array =
+        let padding = RSAEncryptionPadding.Pkcs1
+        use rsa = certificate.GetRSAPrivateKey()
+        rsa.Decrypt(data, padding)
+
+    let sign (data: byte array): byte array =
+        let algorithm = HashAlgorithmName.MD5
+        let padding = RSASignaturePadding.Pkcs1
+        use rsa = certificate.GetRSAPrivateKey()
+        rsa.SignData(data, algorithm, padding)
+
+#!fsharp
+
+module Cryptographer =
+
+    let passThrough =
+        { encoding = id
+        ; decoding = id
+        }
+
+#!fsharp
+
+/// pipeline configuration
+let pipeline: Pipeline =
+    [ Cryptographer.passThrough ]
+
+#!fsharp
+
+// rendered encoder & decoder
+
+let renderAsCipher asCipher pipeline =
+    if pipeline |> List.isEmpty then
+        $"Cannot render an empty {nameof pipeline}"
+        |> failwith
+
+    let ordered =
+        match asCipher with
+        | false -> List.rev
+        | _ -> fun x -> x
+
+    let through (pipe: DuplexPipe) =
+        if asCipher
+        then pipe.encoding
+        else pipe.decoding
+
+    let folder bytes (pipe: DuplexPipe) =
+        bytes |> (through pipe)
+
+    fun content ->
+        (ordered pipeline)
+        |> List.fold folder content
+
+let encoder =
+    renderAsCipher true
+        pipeline
+
+let decoder =
+    renderAsCipher false
+        pipeline
+
+#!fsharp
+
+/// client interface
+module Client =
+
+    let bytesFromBase64 (content: string) =
+        Convert.FromBase64String(content)
+
+    let bytesFromHex (content: string) =
+        Convert.FromHexString(content)
+
+    let bytesFromText (text: string) =
+        Encoding.UTF8.GetBytes(text)
+
+    let toBase64 (bytes: byte array) =
+        Convert.ToBase64String(bytes)
+
+    let toHex (bytes: byte array) =
+        Convert.ToHexString(bytes)
+
+    let toText (bytes: byte array) =
+        Encoding.UTF8.GetString(bytes)
+
+
+    let private line = "-" |> String.replicate 6
+    let private lineHead = line + line
+    let private printLine (parts: string list) =
+        String.concat " " parts
+        |> printfn "%s"
+
+    let printHeader message =
+        [ lineHead; message; line ]
+        |> printLine
+
+    let printDetail message =
+        [ line; message ]
+        |> printLine
+
+
+    let private lineOf (text: string) n =
+        let limit = 64
+        let idx = n * limit
+
+        match idx < text.Length with
+        | false -> None
+        | _ ->
+            match idx + limit < text.Length with
+            | false -> text.Substring(idx)
+            | _ -> text.Substring(idx, limit)
+            |> Some
+
+    let private printBytesAs stringify data =
+        let content = data |> stringify
+        let lines =
+            Seq.initInfinite (lineOf content)
+            |> Seq.takeWhile Option.isSome
+            |> Seq.map Option.get
+            |> Seq.toList
+
+        let toRowNumber n =
+            Math.Log10(lines.Length)
+            |> (int >> ((+) 1))
+            |> sprintf "{0,%d}"
+            |> fun f ->
+                String.Format(f, n + 1)
+
+        lines |> List.iteri (fun n line ->
+            printfn $" {toRowNumber n} | {line}"
+        )
+
+    let printBytesAsHex =
+        printBytesAs toHex
+
+    let printBytesAsBase64 =
+        printBytesAs toBase64
+
+
+open Client
+
+#!markdown
+
+### Secret Message
+
+#!fsharp
+
+let secret_message_is_already_encoded = false
+let secret_message = """hit me with some enters 😅"""
+
+#!fsharp
+
+// show secret_message
+
+let raw =
+    let toRawBytes =
+        if secret_message_is_already_encoded
+        then bytesFromBase64
+        else bytesFromText
+
+    secret_message
+    |> toRawBytes
+
+
+printHeader "Given Secret Message"
+match secret_message_is_already_encoded with
+| true -> raw |> toText
+| _ -> secret_message
+|> printf "%s"
+
+#!fsharp
+
+// raw bytes
+
+printHeader "Message Bytes"
+printBytesAsHex raw
+
+
+let whenNotAlreadyEncodedPrintAs printer content =
+    match secret_message_is_already_encoded with
+    | false -> content |> printer
+    | _ ->
+        "Same as Message Bytes"
+        |> printDetail
+
+#!fsharp
+
+// encoded cipher
+
+let cipher =
+    let toCipherBytes =
+        if secret_message_is_already_encoded
+        then fun bytes -> bytes
+        else encoder
+
+    raw
+    |> toCipherBytes
+
+
+printHeader "Message Cipher"
+whenNotAlreadyEncodedPrintAs
+printBytesAsHex cipher
+
+#!fsharp
+
+// cipher as base64
+
+printHeader "Cipher (Base64)"
+whenNotAlreadyEncodedPrintAs
+printBytesAsBase64 cipher
+
+#!markdown
+
+### Solved Message
+
+#!fsharp
+
+// decoded cipher
+
+let solved =
+    cipher |> decoder
+
+printHeader "Solved Bytes"
+printBytesAsHex solved
+
+#!fsharp
+
+// solved as base64
+
+printHeader "Solved (Base64)"
+printBytesAsBase64 solved
+
+#!fsharp
+
+// show message
+
+printHeader "Found Secret Message"
+
+let isMatched =
+    let unpack (bytes: Bytes) =
+        let it: byte array = bytes
+        it
+
+    let cipher' = cipher |> unpack
+    let solved' = solved |> unpack
+    let comparer (a: byte) (b: byte) =
+        a.CompareTo(b)
+
+    (cipher', solved')
+    ||> Array.compareWith comparer
+    |> fun result -> result = 0
+
+printDetail $"Is matched to original: %A{isMatched}"
+printf $"%s{solved |> toText}"

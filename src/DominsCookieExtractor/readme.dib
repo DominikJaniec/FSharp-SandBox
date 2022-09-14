@@ -91,7 +91,7 @@ module InputSource =
             commentLinePattern
                 .IsMatch(line)
             |> not
-            
+
         let lines =
             content
             |> Seq.choose notEmpty
@@ -116,7 +116,7 @@ module InputSource =
         | true -> readInputFileLines ()
         | _ ->
             fromRawInputLines ()
-            |> Option.orElseWith 
+            |> Option.orElseWith
                 readInputFileLines
 
 #!fsharp
@@ -131,13 +131,13 @@ module HttpMessage =
         | _ -> None
 
 
-    type Header = 
+    type Header =
         { name: string
         ; value: string
         }
 
     module Header =
-        let private pattern = 
+        let private pattern =
             Regex @"^(?<Name>\w+): (?<Value>.*)$"
 
         let private toHeader (matched: Match) =
@@ -149,14 +149,14 @@ module HttpMessage =
             }
 
         let parse line : Header option =
-            line 
+            line
             |> whenLineMatch pattern
             |> Option.map toHeader
 
         let matches name (header: Header) =
             StringComparer.OrdinalIgnoreCase
                 .Equals(name, header.name)
-            |> function 
+            |> function
                 | true -> header |> Some
                 | _ -> None
 
@@ -169,7 +169,7 @@ module HttpMessage =
     module Request =
         let hasHeader name (request: Request) =
             request.headers
-            |> Seq.choose 
+            |> Seq.choose
                 (Header.matches name)
             |> Seq.tryHead
 
@@ -178,18 +178,18 @@ module HttpMessages =
     open HttpMessage
 
     let parseRequest startLine request =
-        let getHeaders = 
+        let getHeaders =
             Seq.choose Header.parse
             >> Seq.toList
 
-        { lines = startLine :: request 
+        { lines = startLine :: request
         ; headers = request |> getHeaders
         } |> Some
 
 #!fsharp
 
-// namespace Continuum.Common
-    
+module Continuum_Common =
+
     type Singleton<'a> =
         | NotSingleOne of ('a list) option
         | SingleOne of 'a
@@ -204,7 +204,7 @@ module HttpMessages =
             | [ item ] -> item |> SingleOne
             | items ->
                 (items |> Some)
-                |> NotSingleOne 
+                |> NotSingleOne
 
         let toList = function
             | NotSingleOne None -> []
@@ -267,11 +267,11 @@ module CookieSource =
         | startLine :: requestRest ->
             (startLine, requestRest)
             ||> HttpMessages.parseRequest
-            |> Option.bind 
+            |> Option.bind
                 (Request.hasHeader header)
 
         | [] -> None
-    
+
     module private Cookie =
         let private delimeter = "; "
         let private pattern =
@@ -281,7 +281,7 @@ module CookieSource =
             let toCookie value =
                 let matched = pattern.Match(value)
                 match matched.Success with
-                | false -> 
+                | false ->
                     $"Cannot parse %A{value} as Cookie entry"
                     |> failwith
 
@@ -303,17 +303,17 @@ module CookieSource =
         ]
         |> Seq.choose ((|>) inputLines)
         |> Seq.tryHead
-        |> Option.map 
+        |> Option.map
             (Cookie.fromHeader)
 
     let private anything x = true
-    
+
     let private byName name (c: Cookie) =
         StringComparer.OrdinalIgnoreCase
             .Equals(name, c.key)
 
     let matched filter =
-        List.choose <| fun (c: Cookie) -> 
+        List.choose <| fun (c: Cookie) ->
             let score = filter c
             match score with
             | false -> None
@@ -362,7 +362,7 @@ module CookieSource =
                 | "" -> 0
                 | suffix ->
                     match Int32.TryParse(suffix) with
-                    | (true, parsed) -> 
+                    | (true, parsed) ->
                         parsed
                     | (false, _) ->
                         $"The '{prefix}' suffix is NAN: {c.key}"
@@ -381,17 +381,19 @@ module CookieSource =
                 if i <> order then
                     $"Unexpected order as: {order} at: {i}, for: {c.key}"
                     |> failwith
-                
+
                 c.value
 
             List.mapi extract
             >> String.concat ""
-            
+
         find isPrefixMatch
         |> Option.map orderCookies
         |> Option.map combine
 
 #!fsharp
+
+open Continuum_Common
 
 let sourceCookie = "backmsg"
 let cookieValue =
@@ -411,5 +413,5 @@ let decodedValue =
     |> Encoding.UTF8.GetString
 
 printWithHeader
-    $"Value decoded from Base64:"
+    "Raw value decoded from Base64:"
     decodedValue
