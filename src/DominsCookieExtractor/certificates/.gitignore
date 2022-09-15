@@ -1,0 +1,5 @@
+# One simply should not commit anything from here!
+*
+
+# Nonetheless, let's keep this one file.
+!.gitignore

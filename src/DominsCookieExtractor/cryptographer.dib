@@ -71,6 +71,7 @@ let certificate = Certificate.load ()
 
 #!fsharp
 
+/// pipeline's base hunk of data
 type Bytes = byte array
 
 type PipePiece =
@@ -81,65 +82,112 @@ type DuplexPipe =
     ; decoding: PipePiece
     }
 
+type Direction =
+    | Encoding
+    | Decoding
+
 type Pipeline =
     DuplexPipe list
 
 #!fsharp
 
-module Cipher =
-    open System.Text.Encodings
-    open System.Security.Cryptography
-    open System.Security.Cryptography.X509Certificates
-
-    let encrypt (data: byte array): byte array =
-        let padding = RSAEncryptionPadding.Pkcs1
-        use rsa = certificate.GetRSAPublicKey()
-        rsa.Encrypt(data, padding)
-
-    let decrypt (data: byte array): byte array =
-        let padding = RSAEncryptionPadding.Pkcs1
-        use rsa = certificate.GetRSAPrivateKey()
-        rsa.Decrypt(data, padding)
-
-    let sign (data: byte array): byte array =
-        let algorithm = HashAlgorithmName.MD5
-        let padding = RSASignaturePadding.Pkcs1
-        use rsa = certificate.GetRSAPrivateKey()
-        rsa.SignData(data, algorithm, padding)
-
-#!fsharp
-
-module Cryptographer =
+/// pipeline factories
+module Pipeline =
 
     let passThrough =
         { encoding = id
         ; decoding = id
         }
 
+    let makeFor direction (piece: PipePiece) (pipe: DuplexPipe) =
+        match direction with
+        | Encoding -> { pipe with encoding = piece }
+        | Decoding -> { pipe with decoding = piece }
+
+    let makeEncodingDecoding (encoding, decoding) =
+        passThrough
+        |> makeFor Encoding encoding
+        |> makeFor Decoding decoding
+
+#!fsharp
+
+module Cryptographer =
+    open System.IO.Compression
+    open System.Security.Cryptography
+    open System.Security.Cryptography.X509Certificates
+    open Pipeline
+
+
+    let usingDeflate (): DuplexPipe =
+        let withStreams streamsAction (data: Bytes) =
+            use dataStream = new MemoryStream(data, false)
+            use resultStream = new MemoryStream()
+            (dataStream, resultStream)
+            |> streamsAction
+
+            resultStream.ToArray()
+
+        let asCompression =
+            withStreams <| fun (data, result) ->
+                let mode = CompressionMode.Compress
+                use deflate = new DeflateStream(result, mode)
+                data.CopyTo(deflate)
+
+        let asDecompression =
+            withStreams <| fun (data, result) ->
+                let mode = CompressionMode.Decompress
+                use deflate = new DeflateStream(data, mode)
+                deflate.CopyTo(result)
+
+        makeEncodingDecoding
+            ( asCompression
+            , asDecompression
+            )
+
+
+    let usingRSA (): DuplexPipe =
+        let padding = RSAEncryptionPadding.Pkcs1
+
+        let encoding data =
+            use rsa = certificate.GetRSAPublicKey()
+            rsa.Encrypt(data, padding)
+
+        let decoding data =
+            use rsa = certificate.GetRSAPrivateKey()
+            rsa.Decrypt(data, padding)
+
+        makeEncodingDecoding
+            ( encoding
+            , decoding
+            )
+
 #!fsharp
 
 /// pipeline configuration
-let pipeline: Pipeline =
-    [ Cryptographer.passThrough ]
+let cryptoPipeline: Pipeline =
+    [ Pipeline.passThrough
+    ; Cryptographer.usingDeflate ()
+    ; Cryptographer.usingRSA ()
+    ]
 
 #!fsharp
 
 // rendered encoder & decoder
 
-let renderAsCipher asCipher pipeline =
+let renderAs direction pipeline =
     if pipeline |> List.isEmpty then
         $"Cannot render an empty {nameof pipeline}"
         |> failwith
 
     let ordered =
-        match asCipher with
-        | false -> List.rev
-        | _ -> fun x -> x
+        match direction with
+        | Decoding -> List.rev
+        | Encoding -> id
 
     let through (pipe: DuplexPipe) =
-        if asCipher
-        then pipe.encoding
-        else pipe.decoding
+        match direction with
+        | Decoding -> pipe.decoding
+        | Encoding -> pipe.encoding
 
     let folder bytes (pipe: DuplexPipe) =
         bytes |> (through pipe)
@@ -149,12 +197,14 @@ let renderAsCipher asCipher pipeline =
         |> List.fold folder content
 
 let encoder =
-    renderAsCipher true
-        pipeline
+    cryptoPipeline
+    |> renderAs
+        Encoding
 
 let decoder =
-    renderAsCipher false
-        pipeline
+    cryptoPipeline
+    |> renderAs
+        Decoding
 
 #!fsharp
 
@@ -272,11 +322,11 @@ printHeader "Message Bytes"
 printBytesAsHex raw
 
 
-let whenNotAlreadyEncodedPrintAs printer content =
+let whenNotAlreadyEncodedAs what doAction =
     match secret_message_is_already_encoded with
-    | false -> content |> printer
+    | false -> doAction ()
     | _ ->
-        "Same as Message Bytes"
+        $"Same as %s{what}"
         |> printDetail
 
 #!fsharp
@@ -294,16 +344,16 @@ let cipher =
 
 
 printHeader "Message Cipher"
-whenNotAlreadyEncodedPrintAs
-printBytesAsHex cipher
+whenNotAlreadyEncodedAs "Message Bytes"
+    (fun () -> printBytesAsHex cipher)
 
 #!fsharp
 
 // cipher as base64
 
 printHeader "Cipher (Base64)"
-whenNotAlreadyEncodedPrintAs
-printBytesAsBase64 cipher
+whenNotAlreadyEncodedAs "Secret Message"
+    (fun () -> printBytesAsBase64 cipher)
 
 #!markdown
 
@@ -333,18 +383,10 @@ printBytesAsBase64 solved
 printHeader "Found Secret Message"
 
 let isMatched =
-    let unpack (bytes: Bytes) =
-        let it: byte array = bytes
-        it
-
-    let cipher' = cipher |> unpack
-    let solved' = solved |> unpack
-    let comparer (a: byte) (b: byte) =
-        a.CompareTo(b)
-
-    (cipher', solved')
-    ||> Array.compareWith comparer
-    |> fun result -> result = 0
+    raw.Length = solved.Length
+    && Seq.zip raw solved
+    |> Seq.forall
+        (fun (a, b) -> a = b)
 
 printDetail $"Is matched to original: %A{isMatched}"
 printf $"%s{solved |> toText}"
