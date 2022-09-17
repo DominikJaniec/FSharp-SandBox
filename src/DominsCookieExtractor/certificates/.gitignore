@@ -1,5 +1,6 @@
 # One simply should not commit anything from here!
 *
 
-# Nonetheless, let's keep this one file.
+# Nonetheless, let's keep those files:
 !.gitignore
+!secrets.fsx

@@ -6,10 +6,11 @@
 
 #!fsharp
 
+#load "certificates/secrets.fsx"
+
 let __certificate =
     {| dir = "certificates"
     ;  file = "domins.pfx"
-    ;  secret = "minik"
     |}
 
 #!markdown
@@ -32,19 +33,50 @@ module Certificate =
     open System.IO
     open System.Security
     open System.Security.Cryptography.X509Certificates
+    open Secrets
 
-
-    let private certificateSecret =
-        __certificate.secret
-
-    let private certificateFilePath =
+    let private certificatesDir =
         [| __SOURCE_DIRECTORY__
         ;  __certificate.dir
+        |] |>  Path.Combine
+
+    let private certificateFilePath =
+        [| certificatesDir
         ;  __certificate.file
         |] |>  Path.Combine
 
     let private keyStorageFlags =
         X509KeyStorageFlags.DefaultKeySet
+
+    let private loadFileSecret () =
+        let file = __certificate.file
+        let requested (entry: Secrets.Entry) =
+            file = entry.file
+        let getPassword (entry: Secrets.Entry) =
+            entry.pwd
+        let stringify (entry: Secrets.Entry) =
+            $"{entry.file}/{entry.pwd}"
+
+        let secrets =
+            Secrets.``.pfx``
+            |> List.where
+                requested
+
+        let throwAmbiguousMatch () =
+            let matched =
+                secrets
+                |> List.map
+                    stringify
+
+            "Could not single match for requested"
+            + $" '%s{file}':\n%A{matched}"
+            |> failwith
+
+        secrets
+        |> List.tryExactlyOne
+        |> Option.defaultWith
+            throwAmbiguousMatch
+        |> getPassword
 
 
     let load () =
@@ -55,7 +87,7 @@ module Certificate =
 
         new X509Certificate2
             ( certificateFilePath
-            , certificateSecret
+            , loadFileSecret ()
             , keyStorageFlags
             )
 
@@ -120,7 +152,7 @@ module Cryptographer =
 
     let usingDeflate (): DuplexPipe =
         let withStreams streamsAction (data: Bytes) =
-            use dataStream = new MemoryStream(data, false)
+            use dataStream = new MemoryStream(data, writable = false)
             use resultStream = new MemoryStream()
             (dataStream, resultStream)
             |> streamsAction
@@ -130,13 +162,14 @@ module Cryptographer =
         let asCompression =
             withStreams <| fun (data, result) ->
                 let mode = CompressionMode.Compress
-                use deflate = new DeflateStream(result, mode)
+                use deflate = new DeflateStream(result, mode, leaveOpen = true)
                 data.CopyTo(deflate)
 
         let asDecompression =
             withStreams <| fun (data, result) ->
                 let mode = CompressionMode.Decompress
-                use deflate = new DeflateStream(data, mode)
+                use deflate = new DeflateStream(data, mode, leaveOpen = false)
+                // possible vulnerability to decompression bomb attacks
                 deflate.CopyTo(result)
 
         makeEncodingDecoding
